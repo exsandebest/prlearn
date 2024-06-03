@@ -7,7 +7,13 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11.9"
+multiprocess = {version = "^0.70.16", optional = true}
 
+[tool.poetry.group.test.dependencies]
+pytest = "^8.2.1"
+
+[tool.poetry.extras]
+multiprocess = ["multiprocess"]
 
 [build-system]
 requires = ["poetry-core"]

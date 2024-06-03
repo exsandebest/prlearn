@@ -1,0 +1,416 @@
+from collections import namedtuple
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+from typing import Any, Dict, List, Optional, Tuple
+
+from prlearn.base.agent import Agent
+from prlearn.base.agent_combiner import AgentCombiner
+from prlearn.base.environment import Environment
+from prlearn.base.experience import Experience
+from prlearn.base.worker import Worker
+from prlearn.common.dataclasses import (
+    ExperienceData,
+    MessageType,
+    Mode,
+    NewAgentData,
+    SnapshotAgentData,
+    SyncMode,
+    TrainerMessage,
+    WorkerMessage,
+)
+from prlearn.common.config import BASE_QUEUE_RECEIVE_TIMEOUT
+from prlearn.common.pas import ProcessActionScheduler
+from prlearn.utils.logger import get_logger
+from prlearn.utils.message_utils import (
+    queue_receive,
+    queue_send,
+    try_queue_send,
+)
+from prlearn.utils.multiproc_lib import mp
+
+QueueConn = namedtuple("QueueConn", ["child_to_parent_queue", "parent_to_child_queue"])
+
+logger = get_logger(__name__)
+
+
+class Trainer:
+    """
+    Trainer class to manage the training process of an agent in a distributed environment.
+
+    The Trainer class is responsible for coordinating multiple workers that perform
+    parallel data collection and training tasks. It handles the distribution of tasks,
+    the collection of experience data from workers, and the aggregation of training
+    results.
+    """
+
+    def __init__(
+        self,
+        agent: Agent | List[Agent],
+        env: Environment,
+        n_workers: int = 1,
+        mode: str = "parallel_collecting",
+        combiner: Optional[AgentCombiner] = None,
+        schedule: Optional[List[Tuple[str, float, str]]] = None,
+        sync_mode: str = "async",
+    ):
+        """
+        Initialize the Trainer.
+
+        Parameters:
+        - agent: Agent object or list of Agents if mode is "parallel_collecting".
+        - env: Environment object or a list of Environment objects.
+        - n_workers: Number of workers.
+        - mode: Mode of operation ("parallel_collecting" or "parallel_learning").
+        - combiner: AgentCombiner object, required if mode is "parallel_learning".
+        - schedule: Optional schedule for the ProcessActionScheduler.
+        - sync_mode: Synchronization mode ("sync" or "async").
+        """
+
+        if not isinstance(n_workers, int) or n_workers <= 0:
+            raise ValueError("The 'n_workers' parameter must be a positive integer.")
+        self.n_workers = n_workers
+
+        try:
+            self.mode = Mode(mode)
+        except ValueError:
+            raise ValueError(
+                "The 'mode' parameter must be a string of one of the following values:"
+                f"{[e.value for e in Mode]}."
+            )
+
+        try:
+            self.sync_mode = SyncMode(sync_mode)
+        except ValueError:
+            raise ValueError(
+                "The 'sync_mode' parameter must be a string of one of the following values:"
+                f"{[e.value for e in SyncMode]}."
+            )
+
+        self.use_multiple_agents = isinstance(agent, list)
+
+        if self.use_multiple_agents:
+            if len(agent) != n_workers:
+                raise ValueError(
+                    "The length of the 'agent' list must be equal to 'num_workers'."
+                )
+            if self.mode != Mode.PARALLEL_LEARNING.value:
+                raise ValueError(
+                    f"Multiple agents can be provided only in '{Mode.PARALLEL_LEARNING.value}' mode."
+                )
+
+            self.agent = agent[0]
+            self.start_agents = agent
+        else:
+            self.agent = agent
+
+        if schedule and not all(
+            isinstance(item, tuple) and len(item) == 3 for item in schedule
+        ):
+            raise ValueError(
+                "The 'schedule' parameter must be a list of tuples with three elements each."
+            )
+
+        self.schedule_config = schedule
+
+        if self.mode == Mode.PARALLEL_LEARNING and not combiner:
+            raise ValueError("For 'parallel_learning' mode, a combiner is required.")
+
+        self.combiner = combiner
+
+        self.env = env
+
+        self.agent_version = 0
+        self.experience_lock = Lock()
+        self.experience = Experience()
+        self.scheduler = ProcessActionScheduler(self.schedule_config)
+
+        self.workers_processes = []
+        self.workers_queues = []
+        self.workers_steps = [0] * n_workers
+        self.workers_episodes = [0] * n_workers
+        self.workers_agent_versions = [0] * n_workers
+        self.workers_agents = (
+            [self.agent] * n_workers if not self.use_multiple_agents else self.agent
+        )
+        self.workers_stats = [{}] * n_workers
+        self.workers_rewards = [[] for _ in range(n_workers)]
+        self.workers_finished = [False] * n_workers
+        self.workers_done_accepted = [False] * n_workers
+        self.workers_messages = [[] for _ in range(n_workers)]
+
+    def _update_worker_data(self, worker_index: int, data: Any) -> None:
+        """
+        Update the worker data with the provided information.
+
+        Parameters:
+        - worker_index: Index of the worker.
+        - data: Data received from the worker.
+
+        Updates the episode count, step count, agent version, statistics, and rewards for the worker.
+        """
+
+        self.workers_episodes[worker_index] = data.n_total_episodes
+        self.workers_steps[worker_index] = data.n_total_steps
+        self.workers_agent_versions[worker_index] = data.agent_version
+        self.workers_stats[worker_index] = data.stats
+        self.workers_rewards[worker_index].extend(data.rewards)
+
+    def _run_worker_handler(self, worker_index: int, queue: mp.Queue) -> None:
+        """
+        Handle messages from a worker.
+
+        Parameters:
+        - worker_index: Index of the worker.
+        - queue: Queue for receiving messages from the worker.
+
+        Manages the lifecycle of the worker, processing messages such as worker start, experience data,
+        agent updates, and completion signals.
+        """
+
+        logger.debug(f"Starting worker handler for worker {worker_index}")
+
+        while True:
+            worker_message: WorkerMessage = queue_receive(queue)
+            if worker_message and worker_message.type == MessageType.WORKER_START:
+                logger.debug(f"Worker {worker_index} received START message")
+                break
+
+        while True:
+            worker_message: WorkerMessage = queue_receive(
+                queue, timeout=BASE_QUEUE_RECEIVE_TIMEOUT
+            )
+            if not worker_message:
+                continue
+
+            if worker_message.type == MessageType.WORKER_EXPERIENCE:
+                data: ExperienceData = worker_message.data
+                with self.experience_lock:
+                    self.experience.add_experience(data.experience)
+                self._update_worker_data(worker_index, data)
+
+            elif worker_message.type == MessageType.WORKER_AGENT:
+                data: SnapshotAgentData = worker_message.data
+                self._update_worker_data(worker_index, data)
+
+            elif worker_message.type == MessageType.WORKER_DONE:
+                logger.debug(f"Worker {worker_index} received DONE message")
+                self.workers_finished[worker_index] = True
+                break
+
+        logger.debug(f"Worker handler for worker {worker_index} done")
+
+    def _run_worker(
+        self,
+        idx: int,
+        env: Environment,
+        agent: Agent,
+        connection: Tuple[mp.Queue, mp.Queue],
+        global_params: Dict[str, Any],
+    ) -> int:
+        """
+        Run a worker.
+
+        Parameters:
+        - idx: Index of the worker.
+        - env: Environment object.
+        - agent: Agent object.
+        - connection: Tuple of queues for communication.
+        - global_params: Dictionary of global parameters.
+
+        Returns:
+        - int: Result of the worker's run method.
+
+        Initializes and runs the worker process, which interacts with the environment
+        and collects data or trains the agent.
+        """
+        worker = Worker(
+            idx, env, agent, connection, global_params, pas_config=self.schedule_config
+        )
+        return worker.run()
+
+    def _send_agent_to_workers(self, agent: Agent) -> None:
+        """
+        Send the updated agent to all active workers.
+
+        Parameters:
+        - agent: The agent to be sent to workers.
+
+        This method sends the agent's data to all workers that are still active and
+        not finished with their tasks.
+        """
+
+        trainer_message = TrainerMessage(
+            type=MessageType.TRAINER_AGENT,
+            data=NewAgentData(agent_version=self.agent_version, agent=agent),
+        )
+        for i in range(self.n_workers):
+            if self.workers_processes[i].is_alive() and not self.workers_finished[i]:
+                try_queue_send(
+                    self.workers_queues[i].parent_to_child_queue, trainer_message
+                )
+
+    def _train_agent(self, total_steps: int, total_episodes: int) -> Optional[Agent]:
+        """
+        Train the agent based on the collected experience.
+
+        Parameters:
+        - total_steps: Total number of steps taken by all workers.
+        - total_episodes: Total number of episodes completed by all workers.
+
+        Returns:
+        - Optional[Agent]: The updated agent after training.
+
+        This method triggers the training process of the agent if the conditions
+        defined in the scheduler are met. It also manages the experience data batch
+        and agent versioning.
+        """
+
+        if pas_diffs := self.scheduler.check_agent_train(total_steps, total_episodes):
+            logger.debug(
+                f"Training agent: Steps: {total_steps}, Episodes: {total_episodes}"
+            )
+            with self.experience_lock:
+                exp_batch = self.experience.get_experience_batch(pas_diffs["steps"])
+                self.experience.clear()
+
+            self.agent.train(exp_batch)
+            self.agent_version += 1
+
+            return self.agent.get() if hasattr(self.agent, "get") else self.agent
+
+    def _combine_agents(self, total_steps: int, total_episodes: int) -> Optional[Agent]:
+        """
+        Combine agents from different workers into a single model.
+
+        Parameters:
+        - total_steps: Total number of steps taken by all workers.
+        - total_episodes: Total number of episodes completed by all workers.
+
+        Returns:
+        - Optional[Agent]: The combined agent after aggregation.
+
+        This method uses the combiner to merge the agents' models and updates the
+        agent version. It is called periodically based on the scheduler's conditions.
+        """
+        if pas_diffs := self.scheduler.check_combine_agents(
+            total_steps, total_episodes
+        ):
+            new_agent = self.combiner.combine(
+                self.workers_agents,
+                self.agent.get() if hasattr(self.agent, "get") else self.agent,
+                self.workers_stats,
+            )
+            self.agent_version = max(self.workers_agent_versions) + 1
+            if hasattr(self.agent, "set"):
+                self.agent = new_agent
+
+            return new_agent
+
+    def run(self):
+        """
+        Run the training process.
+
+        This method initializes the worker processes, sends start messages to them,
+        and coordinates the collection and processing of experience data. It also
+        manages the synchronization and updating of agents among workers.
+
+        The method performs the following steps:
+        1. Initializes multiprocessing context and queues for worker communication.
+        2. Starts worker processes and submits worker handlers to a ThreadPoolExecutor.
+        3. Sends a start message to all workers.
+        4. Enters a loop to monitor the progress of workers and manage agent updates.
+        5. Waits for all workers to complete their tasks.
+        6. Collects results from worker processes and returns the trained agent and worker results.
+
+        Returns:
+            Tuple[Agent, List[int]]: The trained agent and a list of worker process exit codes.
+        """
+
+        logger.info("Launching processes...")
+        logger.debug("Creating queues")
+        mp_context = mp.get_context("spawn")
+        self.workers_queues = [
+            QueueConn(mp_context.Queue(), mp_context.Queue())
+            for _ in range(self.n_workers)
+        ]
+
+        logger.debug("Starting processes")
+        for i in range(self.n_workers):
+            process = mp_context.Process(
+                target=self._run_worker,
+                args=(
+                    i,
+                    self.env,
+                    self.start_agents[i] if self.use_multiple_agents else self.agent,
+                    (
+                        self.workers_queues[i].parent_to_child_queue,
+                        self.workers_queues[i].child_to_parent_queue,
+                    ),
+                    {
+                        "mode": self.mode,
+                        "sync_mode": self.sync_mode,
+                    },
+                ),
+            )
+            process.start()
+            self.workers_processes.append(process)
+
+        logger.debug("Starting workers handlers")
+        executor = ThreadPoolExecutor(self.n_workers)
+        futures = [
+            executor.submit(
+                self._run_worker_handler,
+                i,
+                self.workers_queues[i].child_to_parent_queue,
+            )
+            for i in range(self.n_workers)
+        ]
+
+        logger.debug("Sending START messages to all workers")
+        for queue in self.workers_queues:
+            queue_send(
+                queue.parent_to_child_queue, TrainerMessage(MessageType.TRAINER_START)
+            )
+
+        self.scheduler.set_time()
+        logger.info("Main process started")
+
+        while True:
+            current_total_steps = sum(self.workers_steps)
+            current_total_episodes = sum(self.workers_episodes)
+
+            agent_data = (
+                self._train_agent(current_total_steps, current_total_episodes)
+                if self.mode == Mode.PARALLEL_COLLECTING
+                else self._combine_agents(current_total_steps, current_total_episodes)
+            )
+
+            if agent_data:
+                self._send_agent_to_workers(agent_data)
+
+            for i in range(self.n_workers):
+                if self.workers_finished[i] and not self.workers_done_accepted[i]:
+                    logger.debug(f"Sending DONE to Worker {i}")
+                    queue_send(
+                        self.workers_queues[i].parent_to_child_queue,
+                        TrainerMessage(MessageType.TRAINER_DONE),
+                    )
+                    self.workers_done_accepted[i] = True
+
+            if all(self.workers_finished) and all(self.workers_done_accepted):
+                logger.debug("All workers are done")
+                break
+
+        logger.info("Main process finished")
+
+        for future in futures:
+            future.result()
+
+        workers_results = [process.join() for process in self.workers_processes]
+
+        results = {
+            "workers": workers_results,
+            "trainer": self,
+        }
+
+        return self.agent, results
