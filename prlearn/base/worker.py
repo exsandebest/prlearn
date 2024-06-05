@@ -50,7 +50,6 @@ class Worker:
         - agent: Agent object.
         - connection: Tuple of queues for communication.
         - global_params: Dictionary of global parameters.
-        - pas_config: Optional configuration for the ProcessActionScheduler.
         """
 
         self.worker_id = worker_id
@@ -66,13 +65,12 @@ class Worker:
         self.global_params = global_params
         self.mode = global_params["mode"]
         self.experience = Experience()
-        self.pas_config = pas_config
         self.agent_store = None
         self.agent_store_version = 0
         self.store_agent_available = False
         self.stop_listener = False
         self.sync_mode = global_params["sync_mode"]
-        self.scheduler = ProcessActionScheduler(self.pas_config)
+        self.scheduler = global_params["scheduler"]
         self.agent_store_lock = Lock()
 
     def _initialize_stats(self) -> Dict[str, Optional[Union[float, Counter]]]:
@@ -111,7 +109,7 @@ class Worker:
         Finish the worker by sending a DONE message to the trainer and waiting for a response.
         """
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Finishing")
-        try_queue_send(self.conn_out, WorkerMessage(MessageType.WORKER_DONE))
+        queue_send(self.conn_out, WorkerMessage(MessageType.WORKER_DONE, data=self.get()))
 
         while True:
             trainer_message: TrainerMessage = queue_receive(self.conn_in)
@@ -312,6 +310,16 @@ class Worker:
             self.env.after()
         if hasattr(self.agent, "after"):
             self.agent.after()
+
+    def get(self):
+        return {
+            "id": self.worker_id,
+            "agent": self.agent,
+            "experience": self.experience,
+            "rewards": self.rewards,
+            "total_episodes": self.total_episodes,
+            "total_steps": self.total_steps,
+        }
 
     def run(self):
         """

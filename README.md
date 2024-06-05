@@ -36,6 +36,7 @@ from typing import Any, Dict, Tuple
 
 
 class MyAgent(Agent):
+    
     def action(self, state: Tuple[Any, Dict[str, Any]]) -> Any:
         observation, info = state
         # Define action logic
@@ -45,19 +46,22 @@ class MyAgent(Agent):
         obs, actions, rewards, terminated, truncated, info = experience.get()
         # Define training logic
         pass
+
+    # May define optional methods:
+    # before(), after(), get(), set(agent)
 ```
 
 ### Using Parallel Training
 
 ```python
 import gymnasium as gym
-from my_best_model import BestAgent
+from best_agent import MyBestAgent
 from prlearn import Trainer
 from prlearn.collection.agent_combiners import FixedStatAgentCombiner
 
 # Define your environment and agent
 env = gym.make("LunarLander-v2")
-agent = BestAgent()
+agent = MyBestAgent()
 
 # Create and configure the trainer
 trainer = Trainer(
@@ -65,7 +69,7 @@ trainer = Trainer(
     env=env,
     n_workers=4,
     schedule=[
-        ("train_finish", 1000, "episodes"),
+        ("finish", 1000, "episodes"),
         ("train_agent", 10, "episodes"),
     ],
     mode="parallel_learning",  # optional
@@ -82,6 +86,32 @@ agent, result = trainer.run()
 - **Trainer Configuration**: The trainer is configured with 4 parallel workers, a schedule that specifies training completion after 1000 episodes and agent training every 10 episodes. 
 - Optional parameters include the mode `parallel_learning`, synchronization mode `sync`, and a combiner `FixedStatAgentCombiner` that averages agent rewards.
 
+### Using Custom Environment
+
+```python
+from prlearn import Environment
+from typing import Any, Dict, Tuple
+
+
+class MyEnv(Environment):
+    
+    def reset(self) -> Tuple[Any, Dict[str, Any]]:
+        # Define reset logic
+        observation = [[1, 2], [3, 4]]
+        info = {"info": "description"}
+        return observation, info
+
+    def step(self, action: Any) -> Tuple[Any, Any, bool, bool, Dict[str, Any]]:
+        # Define step logic
+        observation = [[1, 2], [3, 4]]
+        reward = 1
+        terminated, truncated = False, False
+        info = {"info": "description"}
+        return observation, reward, terminated, truncated, info
+```
+
+**See more usage examples and scenarios at [docs/examples.md](https://github.com/exsandebest/prlearn/blob/master/docs/examples.md)**
+
 ## License
 
-Licensed under the MIT License.
+Licensed under the MIT License. See the [LICENSE](https://github.com/exsandebest/prlearn/blob/master/LICENSE) file for more information.

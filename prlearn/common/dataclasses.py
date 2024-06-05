@@ -1,8 +1,8 @@
+from collections import namedtuple
 from enum import Enum
 from typing import Any, Dict, List, NamedTuple, Optional
 
 from prlearn.base.experience import Experience
-
 
 class MessageType(Enum):
     TRAINER_AGENT = "trainer_agent"
@@ -24,6 +24,8 @@ class SyncMode(Enum):
     SYNCHRONOUS = "sync"
     ASYNCHRONOUS = "async"
 
+
+QueueConn = namedtuple("QueueConn", ["child_to_parent_queue", "parent_to_child_queue"])
 
 class NewAgentData(NamedTuple):
     agent_version: int
@@ -54,7 +56,7 @@ class ExperienceData(NamedTuple):
 
 class WorkerMessage(NamedTuple):
     type: MessageType
-    data: Optional[ExperienceData | SnapshotAgentData] = None
+    data: Optional[ExperienceData | SnapshotAgentData | Dict[str, Any]] = None
 
 
 class TrainerMessage(NamedTuple):

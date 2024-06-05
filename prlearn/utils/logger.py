@@ -8,5 +8,5 @@ def get_logger(name: str = __name__) -> logging.Logger:
         datefmt="%Y-%m-%d %H:%M:%S",
     )
     logger = logging.getLogger(name)
-    logger.setLevel(os.environ.get("LOG_LEVEL", "DEBUG"))
+    logger.setLevel(os.environ.get("LOG_LEVEL", "INFO"))
     return logger
