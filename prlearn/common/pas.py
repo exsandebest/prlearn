@@ -74,7 +74,7 @@ class ProcessActionScheduler:
                 if self.config["train_agent"][key] is not None and self.config["worker_send_data"][key] is None:
                     self.config["worker_send_data"][key] = self.config["train_agent"][key] / n_workers
 
-        if mode == Mode.PARALLEL_LEARNING:
+        if mode == Mode.PARALLEL_LEARNING and n_workers > 1:
             for key in self.config["combine_agents"].keys():
                 if self.config["combine_agents"][key] is not None and self.config["worker_send_data"][key] is None:
                     self.config["worker_send_data"][key] = self.config["combine_agents"][key] / n_workers

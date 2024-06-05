@@ -109,7 +109,7 @@ class Worker:
         Finish the worker by sending a DONE message to the trainer and waiting for a response.
         """
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Finishing")
-        try_queue_send(self.conn_out, WorkerMessage(MessageType.WORKER_DONE))
+        queue_send(self.conn_out, WorkerMessage(MessageType.WORKER_DONE, data=self.get()))
 
         while True:
             trainer_message: TrainerMessage = queue_receive(self.conn_in)
@@ -310,6 +310,16 @@ class Worker:
             self.env.after()
         if hasattr(self.agent, "after"):
             self.agent.after()
+
+    def get(self):
+        return {
+            "id": self.worker_id,
+            "agent": self.agent,
+            "experience": self.experience,
+            "rewards": self.rewards,
+            "total_episodes": self.total_episodes,
+            "total_steps": self.total_steps,
+        }
 
     def run(self):
         """

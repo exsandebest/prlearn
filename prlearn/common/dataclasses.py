@@ -4,7 +4,6 @@ from typing import Any, Dict, List, NamedTuple, Optional
 
 from prlearn.base.experience import Experience
 
-
 class MessageType(Enum):
     TRAINER_AGENT = "trainer_agent"
     TRAINER_START = "trainer_start"
@@ -57,7 +56,7 @@ class ExperienceData(NamedTuple):
 
 class WorkerMessage(NamedTuple):
     type: MessageType
-    data: Optional[ExperienceData | SnapshotAgentData] = None
+    data: Optional[ExperienceData | SnapshotAgentData | Dict[str, Any]] = None
 
 
 class TrainerMessage(NamedTuple):

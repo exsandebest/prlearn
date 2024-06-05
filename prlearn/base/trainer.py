@@ -42,14 +42,14 @@ class Trainer:
     """
 
     def __init__(
-        self,
-        agent: Agent | List[Agent],
-        env: Environment,
-        n_workers: int = 1,
-        mode: str = "parallel_collecting",
-        combiner: Optional[AgentCombiner] = None,
-        schedule: Optional[List[Tuple[str, float, str]]] = None,
-        sync_mode: str = "async",
+            self,
+            agent: Agent | List[Agent],
+            env: Environment,
+            n_workers: int = 1,
+            mode: str = "parallel_collecting",
+            combiner: Optional[AgentCombiner] = None,
+            schedule: Optional[List[Tuple[str, float, str]]] = None,
+            sync_mode: str = "async",
     ):
         """
         Initialize the Trainer.
@@ -102,7 +102,7 @@ class Trainer:
             self.agent = agent
 
         if schedule and not all(
-            isinstance(item, tuple) and len(item) == 3 for item in schedule
+                isinstance(item, tuple) and len(item) == 3 for item in schedule
         ):
             raise ValueError(
                 "The 'schedule' parameter must be a list of tuples with three elements each."
@@ -145,6 +145,7 @@ class Trainer:
         self.workers_finished = [False] * n_workers
         self.workers_done_accepted = [False] * n_workers
         self.workers_messages = [[] for _ in range(n_workers)]
+        self.workers_results = [None for _ in range(n_workers)]
 
     def _update_worker_data(self, worker_index: int, data: Any) -> None:
         """
@@ -203,17 +204,18 @@ class Trainer:
             elif worker_message.type == MessageType.WORKER_DONE:
                 logger.debug(f"Worker {worker_index} received DONE message")
                 self.workers_finished[worker_index] = True
+                self.workers_results[worker_index] = worker_message.data
                 break
 
         logger.debug(f"Worker handler for worker {worker_index} done")
 
     def _run_worker(
-        self,
-        idx: int,
-        env: Environment,
-        agent: Agent,
-        connection: Tuple[mp.Queue, mp.Queue],
-        global_params: Dict[str, Any],
+            self,
+            idx: int,
+            env: Environment,
+            agent: Agent,
+            connection: Tuple[mp.Queue, mp.Queue],
+            global_params: Dict[str, Any],
     ) -> int:
         """
         Run a worker.
@@ -301,7 +303,7 @@ class Trainer:
         agent version. It is called periodically based on the scheduler's conditions.
         """
         if pas_diffs := self.scheduler.check_combine_agents(
-            total_steps, total_episodes
+                total_steps, total_episodes
         ):
             new_agent = self.combiner.combine(
                 self.workers_agents,
@@ -415,11 +417,14 @@ class Trainer:
         for future in futures:
             future.result()
 
-        workers_results = [process.join() for process in self.workers_processes]
+        for process in self.workers_processes:
+            process.join()
 
         results = {
-            "workers": workers_results,
+            "workers": self.workers_results,
             "trainer": self,
         }
+
+        result_agent = self.agent if self.n_workers > 1 else self.workers_results[0]["agent"]
 
         return self.agent, results

@@ -1,3 +1,4 @@
+import os
 import random
 from typing import Any, Dict, Tuple
 
@@ -57,6 +58,8 @@ def test_simple_learning(agent, env):
     assert "trainer" in result
     assert result["trainer"] is trainer
     assert trainer.mode == Mode.PARALLEL_LEARNING
+
+    assert id(agent) == id(trained_agent)
 
 def test_observations_collecting(agent, env):
     trainer = Trainer(
@@ -126,4 +129,5 @@ def test_multiple_parallel_learning(agent, env):
 
 
 if __name__ == "__main__":
+    os.environ["LOG_LEVEL"] = "WARNING"
     pytest.main()
