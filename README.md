@@ -110,8 +110,8 @@ class MyEnv(Environment):
         return observation, reward, terminated, truncated, info
 ```
 
-**See more usage examples and scenarios at docs/examples.md**
+**See more usage examples and scenarios at [docs/examples.md](https://github.com/exsandebest/prlearn/blob/master/docs/examples.md)**
 
 ## License
 
-Licensed under the MIT License.
+Licensed under the MIT License. See the [LICENSE](https://github.com/exsandebest/prlearn/blob/master/LICENSE) file for more information.

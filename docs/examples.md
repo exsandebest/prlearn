@@ -88,7 +88,7 @@ from prlearn.collection.agent_combiners import FixedStatAgentCombiner
 
 
 trainer = Trainer(
-    agent=[agent_1, agent_2, agent_3, agent_4],
+    agent=[agent, agent, agent, agent],
     env=env,
     n_workers=4,
     schedule=[
