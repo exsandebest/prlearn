@@ -50,7 +50,6 @@ class Worker:
         - agent: Agent object.
         - connection: Tuple of queues for communication.
         - global_params: Dictionary of global parameters.
-        - pas_config: Optional configuration for the ProcessActionScheduler.
         """
 
         self.worker_id = worker_id
@@ -66,13 +65,12 @@ class Worker:
         self.global_params = global_params
         self.mode = global_params["mode"]
         self.experience = Experience()
-        self.pas_config = pas_config
         self.agent_store = None
         self.agent_store_version = 0
         self.store_agent_available = False
         self.stop_listener = False
         self.sync_mode = global_params["sync_mode"]
-        self.scheduler = ProcessActionScheduler(self.pas_config)
+        self.scheduler = global_params["scheduler"]
         self.agent_store_lock = Lock()
 
     def _initialize_stats(self) -> Dict[str, Optional[Union[float, Counter]]]:

@@ -5,6 +5,7 @@ from prlearn.base.agent_combiner import AgentCombiner
 from prlearn.base.environment import Environment
 from prlearn.base.experience import Experience
 from prlearn import Trainer
+from prlearn.collection.agent_combiners import FixedAgentCombiner, RandomAgentCombiner
 
 
 @pytest.fixture
@@ -62,8 +63,10 @@ def test_schedule_invalid_item(mock_agent, mock_env):
 
 
 def test_parallel_learning_mode_without_combiner(mock_agent, mock_env):
-    with pytest.raises(ValueError):
-        Trainer(agent=mock_agent, env=mock_env, mode="parallel_learning", n_workers=2)
+    trainer = Trainer(agent=mock_agent, env=mock_env, mode="parallel_learning", n_workers=2)
+    assert isinstance(trainer.combiner, RandomAgentCombiner)
+    trainer = Trainer(agent=mock_agent, env=mock_env, mode="parallel_learning", n_workers=1)
+    assert isinstance(trainer.combiner, FixedAgentCombiner)
 
 
 def test_initialization(mock_agent, mock_env, mock_combiner):

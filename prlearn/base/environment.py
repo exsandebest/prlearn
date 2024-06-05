@@ -3,8 +3,6 @@ from typing import Any, Dict, Tuple
 
 
 class Environment(ABC):
-    def before(self):
-        pass
 
     @abstractmethod
     def reset(self) -> Tuple[Any, Dict[str, Any]]:
@@ -17,6 +15,3 @@ class Environment(ABC):
         raise NotImplementedError(
             "Method 'step' of class Environment is not implemented"
         )
-
-    def after(self):
-        pass

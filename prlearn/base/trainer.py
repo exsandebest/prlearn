@@ -1,4 +1,3 @@
-from collections import namedtuple
 from concurrent.futures import ThreadPoolExecutor
 from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
@@ -8,12 +7,13 @@ from prlearn.base.agent_combiner import AgentCombiner
 from prlearn.base.environment import Environment
 from prlearn.base.experience import Experience
 from prlearn.base.worker import Worker
+from prlearn.collection.agent_combiners import FixedAgentCombiner, RandomAgentCombiner
 from prlearn.common.dataclasses import (
     ExperienceData,
     MessageType,
     Mode,
     NewAgentData,
-    SnapshotAgentData,
+    QueueConn, SnapshotAgentData,
     SyncMode,
     TrainerMessage,
     WorkerMessage,
@@ -27,8 +27,6 @@ from prlearn.utils.message_utils import (
     try_queue_send,
 )
 from prlearn.utils.multiproc_lib import mp
-
-QueueConn = namedtuple("QueueConn", ["child_to_parent_queue", "parent_to_child_queue"])
 
 logger = get_logger(__name__)
 
@@ -93,7 +91,7 @@ class Trainer:
                 raise ValueError(
                     "The length of the 'agent' list must be equal to 'num_workers'."
                 )
-            if self.mode != Mode.PARALLEL_LEARNING.value:
+            if self.mode != Mode.PARALLEL_LEARNING:
                 raise ValueError(
                     f"Multiple agents can be provided only in '{Mode.PARALLEL_LEARNING.value}' mode."
                 )
@@ -112,8 +110,18 @@ class Trainer:
 
         self.schedule_config = schedule
 
+        if self.mode == Mode.PARALLEL_COLLECTING and n_workers == 1:
+            logger.info("Parameter n_workers is set to 1. Using parallel learning mode.")
+            self.mode = Mode.PARALLEL_LEARNING
+
         if self.mode == Mode.PARALLEL_LEARNING and not combiner:
-            raise ValueError("For 'parallel_learning' mode, a combiner is required.")
+            logger.info("Parameter combiner is set to None.")
+            if n_workers == 1:
+                logger.info("Using FixedAgentCombiner(0).")
+                combiner = FixedAgentCombiner(0)
+            else:
+                logger.info("Using RandomAgentCombiner(0).")
+                combiner = RandomAgentCombiner(0)
 
         self.combiner = combiner
 
@@ -122,7 +130,7 @@ class Trainer:
         self.agent_version = 0
         self.experience_lock = Lock()
         self.experience = Experience()
-        self.scheduler = ProcessActionScheduler(self.schedule_config)
+        self.scheduler = ProcessActionScheduler(self.schedule_config, n_workers=self.n_workers, mode=self.mode)
 
         self.workers_processes = []
         self.workers_queues = []
@@ -130,7 +138,7 @@ class Trainer:
         self.workers_episodes = [0] * n_workers
         self.workers_agent_versions = [0] * n_workers
         self.workers_agents = (
-            [self.agent] * n_workers if not self.use_multiple_agents else self.agent
+            self.start_agents if self.use_multiple_agents else [self.agent] * n_workers
         )
         self.workers_stats = [{}] * n_workers
         self.workers_rewards = [[] for _ in range(n_workers)]
@@ -224,7 +232,7 @@ class Trainer:
         and collects data or trains the agent.
         """
         worker = Worker(
-            idx, env, agent, connection, global_params, pas_config=self.schedule_config
+            idx, env, agent, connection, global_params
         )
         return worker.run()
 
@@ -349,6 +357,7 @@ class Trainer:
                     {
                         "mode": self.mode,
                         "sync_mode": self.sync_mode,
+                        "scheduler": self.scheduler,
                     },
                 ),
             )

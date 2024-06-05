@@ -1,6 +1,8 @@
 import time
 from typing import Dict, List, Optional, Tuple, Union
 
+from prlearn.common.dataclasses import Mode
+
 
 class ProcessActionScheduler:
     """
@@ -16,11 +18,16 @@ class ProcessActionScheduler:
         ValueError: If any element of config is invalid.
     """
 
-    def __init__(self, config: Optional[List[Tuple[str, int | float, str]]] = None):
+    def __init__(
+            self,
+            config: Optional[List[Tuple[str, int | float, str]]] = None,
+            mode: Mode = Mode.PARALLEL_COLLECTING,
+            n_workers: int = 1,
+    ):
         self.possible_actions = [
             "train_agent",
             "worker_send_data",
-            "train_finish",
+            "finish",
             "combine_agents",
         ]
 
@@ -61,6 +68,20 @@ class ProcessActionScheduler:
                 )
 
             self.config[action][f"{units}_interval"] = interval
+
+        if mode == Mode.PARALLEL_COLLECTING:
+            for key in self.config["train_agent"].keys():
+                if self.config["train_agent"][key] is not None and self.config["worker_send_data"][key] is None:
+                    self.config["worker_send_data"][key] = self.config["train_agent"][key] / n_workers
+
+        if mode == Mode.PARALLEL_LEARNING:
+            for key in self.config["combine_agents"].keys():
+                if self.config["combine_agents"][key] is not None and self.config["worker_send_data"][key] is None:
+                    self.config["worker_send_data"][key] = self.config["combine_agents"][key] / n_workers
+
+            for key in self.config["train_agent"].keys():
+                if self.config["train_agent"][key] is not None and self.config["worker_send_data"][key] is None:
+                    self.config["worker_send_data"][key] = self.config["train_agent"][key] / n_workers
 
     def set_time(self, seconds: float = None, action: str = None):
         if seconds is None:
@@ -178,4 +199,4 @@ class ProcessActionScheduler:
     def check_train_finish(
         self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
     ):
-        return self.check("train_finish", n_steps, n_episodes, check_time)
+        return self.check("finish", n_steps, n_episodes, check_time)

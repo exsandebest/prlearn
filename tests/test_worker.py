@@ -1,18 +1,16 @@
 import pytest
 from unittest.mock import MagicMock, patch
+
+from prlearn.common.pas import ProcessActionScheduler
 from prlearn.utils.multiproc_lib import mp
 from prlearn.base.worker import Worker
 from prlearn.base.agent import Agent
 from prlearn.base.environment import Environment
 from prlearn.base.experience import Experience
 from prlearn.common.dataclasses import (
-    NewAgentData,
     SyncMode,
-    TrainerMessage,
-    MessageType,
     Mode,
 )
-from prlearn.utils.message_utils import queue_send
 
 
 @pytest.fixture
@@ -34,7 +32,11 @@ def mock_environment():
 def worker(mock_agent, mock_environment):
     conn_in = mp.Queue()
     conn_out = mp.Queue()
-    global_params = {"mode": Mode.PARALLEL_LEARNING, "sync_mode": SyncMode.SYNCHRONOUS}
+    global_params = {
+        "mode": Mode.PARALLEL_LEARNING,
+        "sync_mode": SyncMode.SYNCHRONOUS,
+        "scheduler": ProcessActionScheduler([("finish", 3, "episodes")])
+    }
     return Worker(
         worker_id=0,
         env=mock_environment,

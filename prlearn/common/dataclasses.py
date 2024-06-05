@@ -1,3 +1,4 @@
+from collections import namedtuple
 from enum import Enum
 from typing import Any, Dict, List, NamedTuple, Optional
 
@@ -24,6 +25,8 @@ class SyncMode(Enum):
     SYNCHRONOUS = "sync"
     ASYNCHRONOUS = "async"
 
+
+QueueConn = namedtuple("QueueConn", ["child_to_parent_queue", "parent_to_child_queue"])
 
 class NewAgentData(NamedTuple):
     agent_version: int

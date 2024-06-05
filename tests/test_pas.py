@@ -1,6 +1,5 @@
 import time
 import pytest
-from typing import Optional, Tuple, Union
 from prlearn.common.pas import ProcessActionScheduler
 
 
@@ -9,7 +8,7 @@ def scheduler():
     config = [
         ("train_agent", 5, "seconds"),
         ("worker_send_data", 10, "steps"),
-        ("train_finish", 3, "episodes"),
+        ("finish", 3, "episodes"),
         ("combine_agents", 7, "seconds"),
     ]
     return ProcessActionScheduler(config)
@@ -21,7 +20,7 @@ def test_initial_state(scheduler):
     assert "seconds" in scheduler.state["train_agent"]
     assert scheduler.config["train_agent"]["seconds_interval"] == 5
     assert scheduler.config["worker_send_data"]["steps_interval"] == 10
-    assert scheduler.config["train_finish"]["episodes_interval"] == 3
+    assert scheduler.config["finish"]["episodes_interval"] == 3
     assert scheduler.config["combine_agents"]["seconds_interval"] == 7
 
 
@@ -46,7 +45,7 @@ def test_check_worker_send_steps(scheduler):
 
 
 def test_check_train_finish_episodes(scheduler):
-    scheduler.state["train_finish"]["episodes"] = 0
+    scheduler.state["finish"]["episodes"] = 0
     result = scheduler.check_train_finish(n_episodes=4)
     assert result is not None
     assert result["episodes"] == 4
