@@ -1,5 +1,8 @@
 import time
+
 import pytest
+
+from prlearn.common.dataclasses import Mode
 from prlearn.common.pas import ProcessActionScheduler
 
 
@@ -78,6 +81,21 @@ def test_invalid_config_item():
 def test_invalid_config_units():
     with pytest.raises(ValueError):
         ProcessActionScheduler([("train_agent", 5, "invalid_units")])
+
+
+def test_auto_worker_send_data():
+    scheduler = ProcessActionScheduler(
+        [
+            ("train_agent", 5, "steps"),
+            ("finish", 3, "episodes"),
+            ("combine_agents", 7, "steps"),
+        ],
+        n_workers=2,
+        mode=Mode.PARALLEL_LEARNING,
+    )
+
+    assert scheduler.config["worker_send_data"]["steps_interval"] == 3.5
+    assert scheduler.config["worker_send_data"]["episodes_interval"] == 3
 
 
 if __name__ == "__main__":

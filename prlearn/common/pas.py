@@ -19,10 +19,10 @@ class ProcessActionScheduler:
     """
 
     def __init__(
-            self,
-            config: Optional[List[Tuple[str, int | float, str]]] = None,
-            mode: Mode = Mode.PARALLEL_COLLECTING,
-            n_workers: int = 1,
+        self,
+        config: Optional[List[Tuple[str, int | float, str]]] = None,
+        mode: Mode = Mode.PARALLEL_COLLECTING,
+        n_workers: int = 1,
     ):
         self.possible_actions = [
             "train_agent",
@@ -69,19 +69,35 @@ class ProcessActionScheduler:
 
             self.config[action][f"{units}_interval"] = interval
 
+        self.agent_combination = any(self.config["combine_agents"].values())
+        self.agent_training = any(self.config["train_agent"].values())
+
         if mode == Mode.PARALLEL_COLLECTING:
             for key in self.config["train_agent"].keys():
-                if self.config["train_agent"][key] is not None and self.config["worker_send_data"][key] is None:
-                    self.config["worker_send_data"][key] = self.config["train_agent"][key] / n_workers
+                if (
+                    self.config["train_agent"][key] is not None
+                    and self.config["worker_send_data"][key] is None
+                ):
+                    self.config["worker_send_data"][key] = (
+                        self.config["train_agent"][key] / n_workers
+                    )
 
-        if mode == Mode.PARALLEL_LEARNING and n_workers > 1:
+        if mode == Mode.PARALLEL_LEARNING:
             for key in self.config["combine_agents"].keys():
-                if self.config["combine_agents"][key] is not None and self.config["worker_send_data"][key] is None:
-                    self.config["worker_send_data"][key] = self.config["combine_agents"][key] / n_workers
+                if (
+                    self.config["combine_agents"][key] is not None
+                    and self.config["worker_send_data"][key] is None
+                ):
+                    self.config["worker_send_data"][key] = (
+                        self.config["combine_agents"][key] / n_workers
+                    )
 
-            for key in self.config["train_agent"].keys():
-                if self.config["train_agent"][key] is not None and self.config["worker_send_data"][key] is None:
-                    self.config["worker_send_data"][key] = self.config["train_agent"][key] / n_workers
+        for key in self.config["finish"].keys():
+            if (
+                self.config["finish"][key] is not None
+                and self.config["worker_send_data"][key] is None
+            ):
+                self.config["worker_send_data"][key] = self.config["finish"][key]
 
     def set_time(self, seconds: float = None, action: str = None):
         if seconds is None:

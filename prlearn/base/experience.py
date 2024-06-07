@@ -116,7 +116,9 @@ class Experience:
             ]
         return tuple(data[col] for col in columns if col in data)
 
-    def get_experience_batch(self, size: int) -> Self:
+    def get_experience_batch(self, size: int = None) -> Self:
+        if size is None:
+            size = len(self)
         return Experience(
             self.observations[-size:],
             self.actions[-size:],

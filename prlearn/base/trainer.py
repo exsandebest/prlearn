@@ -8,24 +8,21 @@ from prlearn.base.environment import Environment
 from prlearn.base.experience import Experience
 from prlearn.base.worker import Worker
 from prlearn.collection.agent_combiners import FixedAgentCombiner, RandomAgentCombiner
+from prlearn.common.config import BASE_QUEUE_RECEIVE_TIMEOUT
 from prlearn.common.dataclasses import (
     ExperienceData,
     MessageType,
     Mode,
     NewAgentData,
-    QueueConn, SnapshotAgentData,
+    QueueConn,
+    SnapshotAgentData,
     SyncMode,
     TrainerMessage,
     WorkerMessage,
 )
-from prlearn.common.config import BASE_QUEUE_RECEIVE_TIMEOUT
 from prlearn.common.pas import ProcessActionScheduler
 from prlearn.utils.logger import get_logger
-from prlearn.utils.message_utils import (
-    queue_receive,
-    queue_send,
-    try_queue_send,
-)
+from prlearn.utils.message_utils import queue_receive, queue_send, try_queue_send
 from prlearn.utils.multiproc_lib import mp
 
 logger = get_logger(__name__)
@@ -42,14 +39,14 @@ class Trainer:
     """
 
     def __init__(
-            self,
-            agent: Agent | List[Agent],
-            env: Environment,
-            n_workers: int = 1,
-            mode: str = "parallel_collecting",
-            combiner: Optional[AgentCombiner] = None,
-            schedule: Optional[List[Tuple[str, float, str]]] = None,
-            sync_mode: str = "async",
+        self,
+        agent: Agent | List[Agent],
+        env: Environment,
+        n_workers: int = 1,
+        mode: str = "parallel_collecting",
+        combiner: Optional[AgentCombiner] = None,
+        schedule: Optional[List[Tuple[str, float, str]]] = None,
+        sync_mode: str = "async",
     ):
         """
         Initialize the Trainer.
@@ -102,7 +99,7 @@ class Trainer:
             self.agent = agent
 
         if schedule and not all(
-                isinstance(item, tuple) and len(item) == 3 for item in schedule
+            isinstance(item, tuple) and len(item) == 3 for item in schedule
         ):
             raise ValueError(
                 "The 'schedule' parameter must be a list of tuples with three elements each."
@@ -111,7 +108,9 @@ class Trainer:
         self.schedule_config = schedule
 
         if self.mode == Mode.PARALLEL_COLLECTING and n_workers == 1:
-            logger.info("Parameter n_workers is set to 1. Using parallel learning mode.")
+            logger.info(
+                "Parameter n_workers is set to 1. Using parallel learning mode."
+            )
             self.mode = Mode.PARALLEL_LEARNING
 
         if self.mode == Mode.PARALLEL_LEARNING and not combiner:
@@ -130,7 +129,9 @@ class Trainer:
         self.agent_version = 0
         self.experience_lock = Lock()
         self.experience = Experience()
-        self.scheduler = ProcessActionScheduler(self.schedule_config, n_workers=self.n_workers, mode=self.mode)
+        self.scheduler = ProcessActionScheduler(
+            self.schedule_config, n_workers=self.n_workers, mode=self.mode
+        )
 
         self.workers_processes = []
         self.workers_queues = []
@@ -210,12 +211,12 @@ class Trainer:
         logger.debug(f"Worker handler for worker {worker_index} done")
 
     def _run_worker(
-            self,
-            idx: int,
-            env: Environment,
-            agent: Agent,
-            connection: Tuple[mp.Queue, mp.Queue],
-            global_params: Dict[str, Any],
+        self,
+        idx: int,
+        env: Environment,
+        agent: Agent,
+        connection: Tuple[mp.Queue, mp.Queue],
+        global_params: Dict[str, Any],
     ) -> int:
         """
         Run a worker.
@@ -233,9 +234,7 @@ class Trainer:
         Initializes and runs the worker process, which interacts with the environment
         and collects data or trains the agent.
         """
-        worker = Worker(
-            idx, env, agent, connection, global_params
-        )
+        worker = Worker(idx, env, agent, connection, global_params)
         return worker.run()
 
     def _send_agent_to_workers(self, agent: Agent) -> None:
@@ -280,7 +279,7 @@ class Trainer:
                 f"Training agent: Steps: {total_steps}, Episodes: {total_episodes}"
             )
             with self.experience_lock:
-                exp_batch = self.experience.get_experience_batch(pas_diffs["steps"])
+                exp_batch = self.experience.get_experience_batch()
                 self.experience.clear()
 
             self.agent.train(exp_batch)
@@ -303,7 +302,7 @@ class Trainer:
         agent version. It is called periodically based on the scheduler's conditions.
         """
         if pas_diffs := self.scheduler.check_combine_agents(
-                total_steps, total_episodes
+            total_steps, total_episodes
         ):
             new_agent = self.combiner.combine(
                 self.workers_agents,
@@ -425,6 +424,8 @@ class Trainer:
             "trainer": self,
         }
 
-        result_agent = self.agent if self.n_workers > 1 else self.workers_results[0]["agent"]
+        result_agent = (
+            self.agent if self.n_workers > 1 else self.workers_results[0]["agent"]
+        )
 
-        return self.agent, results
+        return result_agent, results

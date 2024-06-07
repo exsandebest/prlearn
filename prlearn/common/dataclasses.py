@@ -4,6 +4,7 @@ from typing import Any, Dict, List, NamedTuple, Optional
 
 from prlearn.base.experience import Experience
 
+
 class MessageType(Enum):
     TRAINER_AGENT = "trainer_agent"
     TRAINER_START = "trainer_start"
@@ -26,6 +27,7 @@ class SyncMode(Enum):
 
 
 QueueConn = namedtuple("QueueConn", ["child_to_parent_queue", "parent_to_child_queue"])
+
 
 class NewAgentData(NamedTuple):
     agent_version: int
