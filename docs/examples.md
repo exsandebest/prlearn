@@ -20,7 +20,7 @@ trainer = Trainer(
     env=env,
     schedule=[
         ("finish", 1000, "episodes"),
-        ("train_agent", 10, "episodes"),
+        ("train_agent", 10, "episodes")
     ]
 )
 
@@ -34,8 +34,7 @@ trainer = Trainer(
     env=env,
     n_workers=4,
     schedule=[
-        ("finish", 1000, "episodes"),
-        ("worker_send_data", 1000, "episodes"),
+        ("finish", 1000, "episodes")
     ]
 )
 
@@ -51,7 +50,7 @@ trainer = Trainer(
     n_workers=4,
     schedule=[
         ("finish", 1000, "episodes"),
-        ("train_agent ", 100, "episodes"),
+        ("train_agent ", 100, "episodes")
     ],
     sync_mode = 'sync' # optional
 )
@@ -71,11 +70,11 @@ trainer = Trainer(
     schedule=[
         ("finish", 1000, "episodes"),
         ("train_agent ", 10, "episodes"),
-        ("combine_agents ", 100, "episodes"),
+        ("combine_agents ", 100, "episodes")
     ],
     mode="parallel_learning",
     combiner=FixedStatAgentCombiner("mean_reward"),
-    sync_mode = 'sync', # optional
+    sync_mode = 'sync' # optional
 )
 
 # Run the trainer
@@ -94,11 +93,11 @@ trainer = Trainer(
     schedule=[
         ("finish", 1000, "episodes"),
         ("train_agent ", 10, "episodes"),
-        ("combine_agents ", 100, "episodes"),
+        ("combine_agents ", 100, "episodes")
     ],
     mode="parallel_learning",
     combiner=FixedStatAgentCombiner("max_reward"),
-    sync_mode = 'sync', # optional
+    sync_mode = 'sync' # optional
 )
 
 # Run the trainer
@@ -197,8 +196,35 @@ class MyRandomAgentCombiner(AgentCombiner):
         workers_agents: List[Agent],
         main_agent: Agent,
         workers_stats: Optional[List[Dict[str, Any]]] = None,
-        main_agent_stats: Optional[Dict[str, Any]] = None,
+        main_agent_stats: Optional[Dict[str, Any]] = None
     ) -> Agent:
-        
+        # Base stats: mean_reward, max_reward, min_reward, median_reward
         return random.choice(workers_agents)
+```
+
+
+### Result example
+```python
+# ... Trainer initialization ...
+
+agent, result = trainer.run()
+
+print(result)
+
+# Output
+{
+    'workers': 
+        [
+            {
+                'id': 0,
+                'agent': <MyAgent object>, 
+                'agent_version': 5, 
+                'experience': <Experience object>,
+                'rewards': [98, 114], 
+                'total_episodes': 2, 
+                'total_steps': 100
+            }
+        ], 
+    'trainer': <Trainer object>
+}
 ```

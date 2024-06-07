@@ -3,7 +3,6 @@ from typing import Any, Dict, Tuple
 
 
 class Environment(ABC):
-
     @abstractmethod
     def reset(self) -> Tuple[Any, Dict[str, Any]]:
         raise NotImplementedError(

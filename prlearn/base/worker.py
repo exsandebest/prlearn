@@ -63,15 +63,21 @@ class Worker:
         self.agent_version = 0
         self.rewards = []
         self.global_params = global_params
-        self.mode = global_params["mode"]
+        self.mode: Mode = global_params["mode"]
         self.experience = Experience()
         self.agent_store = None
         self.agent_store_version = 0
         self.store_agent_available = False
         self.stop_listener = False
-        self.sync_mode = global_params["sync_mode"]
-        self.scheduler = global_params["scheduler"]
+        self.sync_mode: SyncMode = global_params["sync_mode"]
+        self.scheduler: ProcessActionScheduler = global_params["scheduler"]
         self.agent_store_lock = Lock()
+        self.wait_new_agent: bool = self.sync_mode == SyncMode.SYNCHRONOUS and (
+            (self.mode == Mode.PARALLEL_COLLECTING and self.scheduler.agent_training)
+            or (
+                self.mode == Mode.PARALLEL_LEARNING and self.scheduler.agent_combination
+            )
+        )
 
     def _initialize_stats(self) -> Dict[str, Optional[Union[float, Counter]]]:
         """
@@ -109,7 +115,9 @@ class Worker:
         Finish the worker by sending a DONE message to the trainer and waiting for a response.
         """
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Finishing")
-        queue_send(self.conn_out, WorkerMessage(MessageType.WORKER_DONE, data=self.get()))
+        queue_send(
+            self.conn_out, WorkerMessage(MessageType.WORKER_DONE, data=self.get())
+        )
 
         while True:
             trainer_message: TrainerMessage = queue_receive(self.conn_in)
@@ -148,13 +156,11 @@ class Worker:
         """
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Stats: {self.stats}")
 
-    def _get_new_agent(self, wait: bool = False) -> None:
+    def _get_new_agent(self) -> None:
         """
         Get a new agent from the agent store, optionally waiting if the agent is not yet available.
-
-        Parameters:
-        - wait: Whether to wait for the new agent to become available.
         """
+
         if self.store_agent_available:
             with self.agent_store_lock:
                 if hasattr(self.agent, "set"):
@@ -163,13 +169,15 @@ class Worker:
                     self.agent = self.agent_store
                 self.agent_version = self.agent_store_version
                 self.store_agent_available = False
-            logger.debug(f"Worker {self.worker_id}: New agent (version {self.agent_version}) acquired")
+            logger.debug(
+                f"Worker {self.worker_id}: New agent (version {self.agent_version}) acquired"
+            )
             return
 
-        if wait:
+        if self.wait_new_agent:
             while not self.store_agent_available:
                 pass
-            self._get_new_agent(wait=False)
+            self._get_new_agent()
 
     def _run_listener(self) -> None:
         """
@@ -240,7 +248,7 @@ class Worker:
                 )
 
             queue_send(self.conn_out, WorkerMessage(type=message_type, data=data))
-            self._get_new_agent(wait=(self.sync_mode == SyncMode.SYNCHRONOUS))
+            self._get_new_agent()
 
     def _run_simulation(self):
         """
@@ -315,6 +323,7 @@ class Worker:
         return {
             "id": self.worker_id,
             "agent": self.agent,
+            "agent_version": self.agent_version,
             "experience": self.experience,
             "rewards": self.rewards,
             "total_episodes": self.total_episodes,

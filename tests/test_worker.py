@@ -1,16 +1,14 @@
-import pytest
 from unittest.mock import MagicMock, patch
 
-from prlearn.common.pas import ProcessActionScheduler
-from prlearn.utils.multiproc_lib import mp
-from prlearn.base.worker import Worker
+import pytest
+
 from prlearn.base.agent import Agent
 from prlearn.base.environment import Environment
 from prlearn.base.experience import Experience
-from prlearn.common.dataclasses import (
-    SyncMode,
-    Mode,
-)
+from prlearn.base.worker import Worker
+from prlearn.common.dataclasses import Mode, SyncMode
+from prlearn.common.pas import ProcessActionScheduler
+from prlearn.utils.multiproc_lib import mp
 
 
 @pytest.fixture
@@ -35,7 +33,7 @@ def worker(mock_agent, mock_environment):
     global_params = {
         "mode": Mode.PARALLEL_LEARNING,
         "sync_mode": SyncMode.SYNCHRONOUS,
-        "scheduler": ProcessActionScheduler([("finish", 3, "episodes")])
+        "scheduler": ProcessActionScheduler([("finish", 3, "episodes")]),
     }
     return Worker(
         worker_id=0,
@@ -51,6 +49,7 @@ def test_worker_initialization(worker):
     assert worker.env is not None
     assert worker.agent is not None
     assert isinstance(worker.experience, Experience)
+    assert worker.wait_new_agent is False
 
 
 def test_worker_update_stats(worker):
