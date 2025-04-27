@@ -25,7 +25,7 @@ from prlearn.common.dataclasses import (
 )
 from prlearn.common.pas import ProcessActionScheduler
 from prlearn.utils.logger import get_logger
-from prlearn.utils.message_utils import queue_receive, queue_send, try_queue_send
+from prlearn.utils.message_utils import queue_receive, queue_send
 from prlearn.utils.multiproc_lib import mp
 
 logger = get_logger(__name__)
@@ -39,19 +39,17 @@ class Worker:
         agent: Agent,
         connection: Tuple[mp.Queue, mp.Queue],
         global_params: Dict[str, Any],
-        pas_config: Optional[List[Tuple[str, Union[int, float], str]]] = None,
     ) -> None:
         """
         Initialize the Worker.
 
-        Parameters:
-        - idx: Index of the worker.
-        - env: Environment object.
-        - agent: Agent object.
-        - connection: Tuple of queues for communication.
-        - global_params: Dictionary of global parameters.
+        Args:
+            worker_id (int): Worker index.
+            env (Environment): Environment object.
+            agent (Agent): Agent object.
+            connection (Tuple[mp.Queue, mp.Queue]): Queues for communication.
+            global_params (Dict[str, Any]): Global parameters (mode, sync_mode, scheduler).
         """
-
         self.worker_id = worker_id
         self.env = env
         self.agent = agent
@@ -84,7 +82,7 @@ class Worker:
         Initialize the statistics dictionary.
 
         Returns:
-        - Dict: Initialized statistics dictionary.
+            Dict[str, Optional[float]]: Initialized statistics dictionary.
         """
         return {
             "max_reward": None,
@@ -102,11 +100,9 @@ class Worker:
         Start the worker by sending a START message to the trainer and waiting for a response.
         """
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Starting")
-
         trainer_message: TrainerMessage = queue_receive(self.conn_in)
         if trainer_message.type != MessageType.TRAINER_START:
             raise ValueError("Incorrect START message from Trainer to Worker")
-
         queue_send(self.conn_out, WorkerMessage(MessageType.WORKER_START))
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Start complete")
 
@@ -118,23 +114,20 @@ class Worker:
         queue_send(
             self.conn_out, WorkerMessage(MessageType.WORKER_DONE, data=self.get())
         )
-
         while True:
             trainer_message: TrainerMessage = queue_receive(self.conn_in)
             if trainer_message and trainer_message.type == MessageType.TRAINER_DONE:
                 break
             elif trainer_message:
                 logger.warning(f"Unexpected message type: {trainer_message.type}")
-
         logger.debug(f"Worker {self.worker_id} ({self.pid}): Finish complete")
 
     def _update_stats(self) -> None:
         """
         Update the worker's statistics based on recent rewards.
         """
-        if len(self.rewards) == 0:
+        if not self.rewards:
             return
-
         last_x_episodes = BASE_LAST_X_EPISODES_STATS
         recent_rewards = self.rewards[-last_x_episodes:]
         self.stats.update(
@@ -160,7 +153,6 @@ class Worker:
         """
         Get a new agent from the agent store, optionally waiting if the agent is not yet available.
         """
-
         if self.store_agent_available:
             with self.agent_store_lock:
                 if hasattr(self.agent, "set"):
@@ -173,7 +165,6 @@ class Worker:
                 f"Worker {self.worker_id}: New agent (version {self.agent_version}) acquired"
             )
             return
-
         if self.wait_new_agent:
             while not self.store_agent_available:
                 pass
@@ -202,11 +193,10 @@ class Worker:
         """
         Perform a parallel learning step by training the agent with a batch of experiences.
         """
-        if (
-            pas_diffs := self.scheduler.check_agent_train(
-                self.total_steps, self.total_episodes
-            )
-        ) is not None:
+        pas_diffs = self.scheduler.check_agent_train(
+            self.total_steps, self.total_episodes
+        )
+        if pas_diffs:
             exp = self.experience.get_experience_batch(pas_diffs["steps"])
             self.agent.train(exp)
             self.agent_version += 1
@@ -218,59 +208,53 @@ class Worker:
         pas_diffs = self.scheduler.check_worker_send(
             self.total_steps, self.total_episodes
         )
-        if pas_diffs:
-            self._update_stats()
-            if self.mode == Mode.PARALLEL_LEARNING:
-                message_type = MessageType.WORKER_AGENT
-                data = SnapshotAgentData(
-                    agent_version=self.agent_version,
-                    agent=self.agent.get()
-                    if hasattr(self.agent, "get")
-                    else self.agent,
-                    n_steps=pas_diffs["steps"],
-                    n_total_steps=self.total_steps,
-                    n_episodes=pas_diffs["episodes"],
-                    n_total_episodes=self.total_episodes,
-                    rewards=self.rewards[-pas_diffs["episodes"] :],
-                    stats=self.stats,
-                )
-            else:
-                message_type = MessageType.WORKER_EXPERIENCE
-                data = ExperienceData(
-                    agent_version=self.agent_version,
-                    n_steps=pas_diffs["steps"],
-                    n_total_steps=self.total_steps,
-                    n_episodes=pas_diffs["episodes"],
-                    n_total_episodes=self.total_episodes,
-                    experience=self.experience.get_experience_batch(pas_diffs["steps"]),
-                    rewards=self.rewards[-pas_diffs["episodes"] :],
-                    stats=self.stats,
-                )
+        if not pas_diffs:
+            return
+        self._update_stats()
+        if self.mode == Mode.PARALLEL_LEARNING:
+            message_type = MessageType.WORKER_AGENT
+            data = SnapshotAgentData(
+                agent_version=self.agent_version,
+                agent=self.agent.get() if hasattr(self.agent, "get") else self.agent,
+                n_steps=pas_diffs["steps"],
+                n_total_steps=self.total_steps,
+                n_episodes=pas_diffs["episodes"],
+                n_total_episodes=self.total_episodes,
+                rewards=self.rewards[-pas_diffs["episodes"] :],
+                stats=self.stats,
+            )
+        else:
+            message_type = MessageType.WORKER_EXPERIENCE
+            data = ExperienceData(
+                agent_version=self.agent_version,
+                n_steps=pas_diffs["steps"],
+                n_total_steps=self.total_steps,
+                n_episodes=pas_diffs["episodes"],
+                n_total_episodes=self.total_episodes,
+                experience=self.experience.get_experience_batch(pas_diffs["steps"]),
+                rewards=self.rewards[-pas_diffs["episodes"] :],
+                stats=self.stats,
+            )
+        queue_send(self.conn_out, WorkerMessage(type=message_type, data=data))
+        self._get_new_agent()
 
-            queue_send(self.conn_out, WorkerMessage(type=message_type, data=data))
-            self._get_new_agent()
-
-    def _run_simulation(self):
+    def _run_simulation(self) -> None:
         """
         Run the simulation, performing actions and collecting experiences.
         """
-
         if hasattr(self.env, "before"):
             self.env.before()
         if hasattr(self.agent, "before"):
             self.agent.before()
-
         episode_reward = 0
         observation, info = self.env.reset()
         n_steps = 0
         self.scheduler.set_time()
-
         while True:
             action = self.agent.action((observation, info))
             next_observation, reward, terminated, truncated, info = self.env.step(
                 action
             )
-
             self.experience.add_step(
                 observation=copy(observation),
                 action=action,
@@ -283,12 +267,10 @@ class Worker:
                 worker_id=self.worker_id,
                 episode=self.total_episodes + 1,
             )
-
             episode_reward += reward
             observation = next_observation
             n_steps += 1
             self.total_steps += 1
-
             if terminated or truncated:
                 observation, info = self.env.reset()
                 self.rewards.append(episode_reward)
@@ -302,24 +284,26 @@ class Worker:
                     self._print_stats()
                 n_steps = 0
                 episode_reward = 0
-
             if self.mode == Mode.PARALLEL_LEARNING:
                 self._parallel_learning_step()
-
             self._send_message()
-
             if self.scheduler.check_train_finish(
                 n_steps=self.total_steps,
                 n_episodes=self.total_episodes,
             ):
                 break
-
         if hasattr(self.env, "after"):
             self.env.after()
         if hasattr(self.agent, "after"):
             self.agent.after()
 
-    def get(self):
+    def get(self) -> Dict[str, Any]:
+        """
+        Get the current state of the worker.
+
+        Returns:
+            Dict[str, Any]: State dictionary with agent, experience, rewards, etc.
+        """
         return {
             "id": self.worker_id,
             "agent": self.agent,
@@ -330,23 +314,18 @@ class Worker:
             "total_steps": self.total_steps,
         }
 
-    def run(self):
+    def run(self) -> "Worker":
         """
         Run the worker, starting the listener and the simulation.
 
         Returns:
-        - Worker: The instance of the Worker class.
+            Worker: The instance of the Worker class.
         """
         self._start()
-
         executor = ThreadPoolExecutor(max_workers=1)
         executor.submit(self._run_listener)
-
         self._run_simulation()
-
         self.stop_listener = True
         executor.shutdown(cancel_futures=True)
-
         self._finish()
-
         return self
