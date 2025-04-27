@@ -77,23 +77,24 @@ class Worker:
             )
         )
 
-    def _initialize_stats(self) -> Dict[str, Optional[Union[float, Counter]]]:
+    def _initialize_stats(self) -> Dict[str, Optional[float]]:
         """
         Initialize the statistics dictionary.
 
         Returns:
             Dict[str, Optional[float]]: Initialized statistics dictionary.
         """
-        return {
-            "max_reward": None,
-            "mean_reward": None,
-            "median_reward": None,
-            "min_reward": None,
-            "max_x_episodes_reward": None,
-            "mean_x_episodes_reward": None,
-            "median_x_episodes_reward": None,
-            "min_x_episodes_reward": None,
-        }
+        keys = [
+            "max_reward",
+            "mean_reward",
+            "median_reward",
+            "min_reward",
+            "max_x_episodes_reward",
+            "mean_x_episodes_reward",
+            "median_x_episodes_reward",
+            "min_x_episodes_reward",
+        ]
+        return {k: None for k in keys}
 
     def _start(self) -> None:
         """
@@ -178,16 +179,17 @@ class Worker:
             trainer_message: TrainerMessage = queue_receive(
                 self.conn_in, timeout=BASE_QUEUE_RECEIVE_TIMEOUT
             )
-            if trainer_message:
-                if trainer_message.type == MessageType.TRAINER_AGENT:
-                    with self.agent_store_lock:
-                        self.agent_store = trainer_message.data.agent
-                        self.agent_store_version = trainer_message.data.agent_version
-                        self.store_agent_available = True
-                else:
-                    logger.warning(
-                        f"Worker {self.worker_id}: Unexpected message type: {trainer_message.type}"
-                    )
+            if not trainer_message:
+                continue
+            if trainer_message.type == MessageType.TRAINER_AGENT:
+                with self.agent_store_lock:
+                    self.agent_store = trainer_message.data.agent
+                    self.agent_store_version = trainer_message.data.agent_version
+                    self.store_agent_available = True
+            else:
+                logger.warning(
+                    f"Worker {self.worker_id}: Unexpected message type: {trainer_message.type}"
+                )
 
     def _parallel_learning_step(self) -> None:
         """

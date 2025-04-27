@@ -96,12 +96,6 @@ class Trainer:
         else:
             self.agent = agent
 
-        if schedule and not all(
-            isinstance(item, tuple) and len(item) == 3 for item in schedule
-        ):
-            raise ValueError(
-                "The 'schedule' parameter must be a list of tuples with three elements each."
-            )
         self.schedule_config = schedule
 
         if self.mode == Mode.PARALLEL_COLLECTING and n_workers == 1:
@@ -210,7 +204,7 @@ class Trainer:
             connection (Tuple[mp.Queue, mp.Queue]): Queues for communication.
             global_params (Dict[str, Any]): Global parameters.
         Returns:
-            int: Result of the worker's run method.
+            Worker: The worker instance after running.
         """
         worker = Worker(idx, env, agent, connection, global_params)
         return worker.run()
@@ -253,6 +247,7 @@ class Trainer:
             self.agent.train(exp_batch)
             self.agent_version += 1
             return self.agent.get() if hasattr(self.agent, "get") else self.agent
+        return None
 
     def _combine_agents(self, total_steps: int, total_episodes: int) -> Optional[Agent]:
         """
@@ -275,6 +270,7 @@ class Trainer:
             if hasattr(self.agent, "set"):
                 self.agent = new_agent
             return new_agent
+        return None
 
     def run(self) -> Tuple[Agent, Dict[str, Any]]:
         """
@@ -340,7 +336,7 @@ class Trainer:
             )
         self.scheduler.set_time()
         logger.info("Main process started")
-        while True:
+        while not (all(self.workers_finished) and all(self.workers_done_accepted)):
             current_total_steps = sum(self.workers_steps)
             current_total_episodes = sum(self.workers_episodes)
             agent_data = (
@@ -350,17 +346,16 @@ class Trainer:
             )
             if agent_data:
                 self._send_agent_to_workers(agent_data)
-            for i in range(self.n_workers):
-                if self.workers_finished[i] and not self.workers_done_accepted[i]:
+            for i, (finished, done_accepted) in enumerate(
+                zip(self.workers_finished, self.workers_done_accepted)
+            ):
+                if finished and not done_accepted:
                     logger.debug(f"Sending DONE to Worker {i}")
                     queue_send(
                         self.workers_queues[i].parent_to_child_queue,
                         TrainerMessage(MessageType.TRAINER_DONE),
                     )
                     self.workers_done_accepted[i] = True
-            if all(self.workers_finished) and all(self.workers_done_accepted):
-                logger.debug("All workers are done")
-                break
         logger.info("Main process finished")
         for future in futures:
             future.result()

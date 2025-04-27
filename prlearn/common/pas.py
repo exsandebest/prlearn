@@ -4,6 +4,41 @@ from typing import Dict, List, Optional, Tuple, Union
 from prlearn.common.dataclasses import Mode
 
 
+def validate_schedule_config(
+    config: Optional[List[Tuple[str, int | float, str]]],
+) -> None:
+    """
+    Validate the schedule configuration for ProcessActionScheduler.
+
+    Args:
+        config (Optional[List[Tuple[str, int | float, str]]]): Schedule to validate.
+    Raises:
+        ValueError: If the schedule is not valid.
+    """
+    if config is None:
+        return
+    allowed_actions = ["train_agent", "worker_send_data", "finish", "combine_agents"]
+    allowed_units = ["steps", "episodes", "seconds"]
+    for idx, item in enumerate(config):
+        if not isinstance(item, tuple) or len(item) != 3:
+            raise ValueError(
+                f"Schedule item at index {idx} must be a tuple of (str, int|float, str), got: {item}"
+            )
+        action, interval, units = item
+        if not isinstance(action, str) or action not in allowed_actions:
+            raise ValueError(
+                f"Schedule item at index {idx}: action '{action}' is not valid. Allowed: {allowed_actions}"
+            )
+        if not isinstance(interval, (int, float)) or interval <= 0:
+            raise ValueError(
+                f"Schedule item at index {idx}: interval '{interval}' must be a positive number."
+            )
+        if not isinstance(units, str) or units not in allowed_units:
+            raise ValueError(
+                f"Schedule item at index {idx}: units '{units}' is not valid. Allowed: {allowed_units}"
+            )
+
+
 class ProcessActionScheduler:
     """
     Class to manage the scheduling of various actions in parallel reinforcement learning.
@@ -32,6 +67,7 @@ class ProcessActionScheduler:
             mode (Mode): Mode of operation.
             n_workers (int): Number of workers.
         """
+        validate_schedule_config(config)
         self.possible_actions = [
             "train_agent",
             "worker_send_data",
