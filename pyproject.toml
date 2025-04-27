@@ -1,8 +1,8 @@
 [tool.poetry]
 name = "prlearn"
-version = "0.0.3"
+version = "0.0.4"
 description = "Parallel Reinforcement Learning library"
-authors = ["Daniil Bogdanov <exsandebest@yandex.ru>"]
+authors = ["Daniil Bogdanov <bogdanov.dd@proton.me>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
