@@ -24,6 +24,14 @@ class ProcessActionScheduler:
         mode: Mode = Mode.PARALLEL_COLLECTING,
         n_workers: int = 1,
     ):
+        """
+        Initialize the ProcessActionScheduler.
+
+        Args:
+            config (Optional[List[Tuple[str, int | float, str]]]): Scheduling configuration.
+            mode (Mode): Mode of operation.
+            n_workers (int): Number of workers.
+        """
         self.possible_actions = [
             "train_agent",
             "worker_send_data",
@@ -51,9 +59,7 @@ class ProcessActionScheduler:
                 raise ValueError(
                     f"Invalid config item '{item}'. Must be a tuple of (str, int|float, str)"
                 )
-
             action, interval, units = item
-
             if action not in self.possible_actions:
                 raise ValueError(
                     f"Invalid action '{action}'. Must be one of {self.possible_actions}"
@@ -66,7 +72,6 @@ class ProcessActionScheduler:
                 raise ValueError(
                     f"Invalid units '{units}' for action '{action}'. Must be one of 'seconds', 'steps', 'episodes'"
                 )
-
             self.config[action][f"{units}_interval"] = interval
 
         self.agent_combination = any(self.config["combine_agents"].values())
@@ -99,12 +104,19 @@ class ProcessActionScheduler:
             ):
                 self.config["worker_send_data"][key] = self.config["finish"][key]
 
-    def set_time(self, seconds: float = None, action: str = None):
+    def set_time(self, seconds: float = None, action: str = None) -> None:
+        """
+        Set the current time for all or a specific action.
+
+        Args:
+            seconds (float, optional): The time to set. Defaults to current time.
+            action (str, optional): The action to set time for. If None, sets for all actions.
+        """
         if seconds is None:
             seconds = time.time()
         if action is None:
-            for action in self.possible_actions:
-                self.state[action]["seconds"] = seconds
+            for act in self.possible_actions:
+                self.state[act]["seconds"] = seconds
         else:
             self.state[action]["seconds"] = seconds
 
@@ -114,12 +126,29 @@ class ProcessActionScheduler:
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
-    ):
+    ) -> None:
+        """
+        Update the state for a specific action.
+
+        Args:
+            action (str): The action to update.
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float): Time value.
+        """
         self.state[action]["steps"] = n_steps
         self.state[action]["episodes"] = n_episodes
         self.state[action]["seconds"] = check_time
 
-    def _get_state(self, action):
+    def _get_state(self, action: str) -> Dict[str, Union[int, float]]:
+        """
+        Get the state for a specific action.
+
+        Args:
+            action (str): The action to get state for.
+        Returns:
+            Dict[str, Union[int, float]]: State dictionary.
+        """
         return self.state[action]
 
     def _get_diff(
@@ -128,7 +157,18 @@ class ProcessActionScheduler:
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
-    ):
+    ) -> Dict[str, float]:
+        """
+        Get the difference in steps, episodes, and seconds for an action.
+
+        Args:
+            action (str): The action to check.
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float): Time value.
+        Returns:
+            Dict[str, float]: Differences for steps, episodes, seconds.
+        """
         return {
             "steps": n_steps - self.state[action]["steps"],
             "episodes": n_episodes - self.state[action]["episodes"],
@@ -141,7 +181,18 @@ class ProcessActionScheduler:
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
-    ):
+    ) -> Dict[str, float]:
+        """
+        Update state and return the difference for an action.
+
+        Args:
+            action (str): The action to update.
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float): Time value.
+        Returns:
+            Dict[str, float]: Differences for steps, episodes, seconds.
+        """
         diff = self._get_diff(action, n_steps, n_episodes, check_time)
         self._update_state(action, n_steps, n_episodes, check_time)
         return diff
@@ -152,7 +203,7 @@ class ProcessActionScheduler:
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
-    ):
+    ) -> Optional[Dict[str, float]]:
         """
         Check if the action should be executed based on the given intervals.
 
@@ -161,22 +212,17 @@ class ProcessActionScheduler:
             n_steps (int): The number of steps taken.
             n_episodes (int): The number of episodes completed.
             check_time (Optional[float]): The current time in seconds.
-
         Returns:
             Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
-
         Raises:
             ValueError: If action is not one of the possible actions.
         """
-
         if action not in self.possible_actions:
             raise ValueError(
                 f"Invalid action '{action}'. Must be one of {self.possible_actions}"
             )
-
         if check_time is None:
             check_time = time.time()
-
         if (
             (
                 self.config[action]["seconds_interval"] is not None
@@ -199,20 +245,60 @@ class ProcessActionScheduler:
 
     def check_worker_send(
         self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ):
+    ) -> Optional[Dict[str, float]]:
+        """
+        Check if worker should send data.
+
+        Args:
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float, optional): Time value.
+        Returns:
+            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
+        """
         return self.check("worker_send_data", n_steps, n_episodes, check_time)
 
     def check_agent_train(
         self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ):
+    ) -> Optional[Dict[str, float]]:
+        """
+        Check if agent should be trained.
+
+        Args:
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float, optional): Time value.
+        Returns:
+            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
+        """
         return self.check("train_agent", n_steps, n_episodes, check_time)
 
     def check_combine_agents(
         self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ):
+    ) -> Optional[Dict[str, float]]:
+        """
+        Check if agents should be combined.
+
+        Args:
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float, optional): Time value.
+        Returns:
+            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
+        """
         return self.check("combine_agents", n_steps, n_episodes, check_time)
 
     def check_train_finish(
         self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ):
+    ) -> Optional[Dict[str, float]]:
+        """
+        Check if training should finish.
+
+        Args:
+            n_steps (int): Number of steps.
+            n_episodes (int): Number of episodes.
+            check_time (float, optional): Time value.
+        Returns:
+            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
+        """
         return self.check("finish", n_steps, n_episodes, check_time)
