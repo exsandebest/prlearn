@@ -2,6 +2,22 @@ from typing import Any, Dict, List, Optional, Self, Tuple
 
 
 class Experience:
+    """
+    Container for storing and manipulating experience tuples in RL.
+
+    Args:
+        observations (Optional[List[Any]]): List of observations.
+        actions (Optional[List[Any]]): List of actions.
+        rewards (Optional[List[Any]]): List of rewards.
+        next_observations (Optional[List[Any]]): List of next observations.
+        terminated (Optional[List[bool]]): List of termination flags.
+        truncated (Optional[List[bool]]): List of truncation flags.
+        info (Optional[List[Dict[str, Any]]]): List of info dicts.
+        agent_versions (Optional[List[int]]): List of agent version numbers.
+        worker_ids (Optional[List[int]]): List of worker IDs.
+        episodes (Optional[List[int]]): List of episode numbers.
+    """
+
     def __init__(
         self,
         observations: Optional[List[Any]] = None,
@@ -26,7 +42,13 @@ class Experience:
         self.worker_ids = worker_ids or []
         self.episodes = episodes or []
 
-    def __len__(self):
+    def __len__(self) -> int:
+        """
+        Returns the number of experience steps.
+
+        Returns:
+            int: Number of steps.
+        """
         return len(self.observations)
 
     def add_step(
@@ -41,7 +63,22 @@ class Experience:
         agent_version: int,
         worker_id: int,
         episode: int,
-    ):
+    ) -> None:
+        """
+        Add a single step to the experience buffer.
+
+        Args:
+            observation (Any): Observation.
+            action (Any): Action.
+            reward (Any): Reward.
+            next_observation (Any): Next observation.
+            terminated (bool): Termination flag.
+            truncated (bool): Truncation flag.
+            info (Dict[str, Any]): Info dict.
+            agent_version (int): Agent version.
+            worker_id (int): Worker ID.
+            episode (int): Episode number.
+        """
         self.observations.append(observation)
         self.actions.append(action)
         self.rewards.append(reward)
@@ -53,31 +90,52 @@ class Experience:
         self.worker_ids.append(worker_id)
         self.episodes.append(episode)
 
-    def clear(self):
-        self.observations.clear()
-        self.actions.clear()
-        self.rewards.clear()
-        self.next_observations.clear()
-        self.terminated.clear()
-        self.truncated.clear()
-        self.info.clear()
-        self.agent_versions.clear()
-        self.worker_ids.clear()
-        self.episodes.clear()
+    def clear(self) -> None:
+        """
+        Clear all stored experience.
+        """
+        for attr in (
+            self.observations,
+            self.actions,
+            self.rewards,
+            self.next_observations,
+            self.terminated,
+            self.truncated,
+            self.info,
+            self.agent_versions,
+            self.worker_ids,
+            self.episodes,
+        ):
+            attr.clear()
 
-    def add_experience(self, exp: Self):
-        self.observations.extend(exp.observations)
-        self.actions.extend(exp.actions)
-        self.rewards.extend(exp.rewards)
-        self.next_observations.extend(exp.next_observations)
-        self.terminated.extend(exp.terminated)
-        self.truncated.extend(exp.truncated)
-        self.info.extend(exp.info)
-        self.agent_versions.extend(exp.agent_versions)
-        self.worker_ids.extend(exp.worker_ids)
-        self.episodes.extend(exp.episodes)
+    def add_experience(self, exp: Self) -> None:
+        """
+        Add another Experience object to this one (concatenate).
+
+        Args:
+            exp (Experience): Another experience object.
+        """
+        for attr in [
+            "observations",
+            "actions",
+            "rewards",
+            "next_observations",
+            "terminated",
+            "truncated",
+            "info",
+            "agent_versions",
+            "worker_ids",
+            "episodes",
+        ]:
+            getattr(self, attr).extend(getattr(exp, attr))
 
     def copy(self) -> Self:
+        """
+        Return a deep copy of the experience.
+
+        Returns:
+            Experience: A copy of this experience.
+        """
         return Experience(
             self.observations.copy(),
             self.actions.copy(),
@@ -92,6 +150,14 @@ class Experience:
         )
 
     def get(self, columns: Optional[List[str]] = None) -> Tuple:
+        """
+        Get experience as a tuple of lists for specified columns.
+
+        Args:
+            columns (Optional[List[str]]): List of column names to return. If None, returns default columns.
+        Returns:
+            Tuple: Tuple of lists for each requested column.
+        """
         data = {
             "observations": self.observations,
             "actions": self.actions,
@@ -117,6 +183,14 @@ class Experience:
         return tuple(data[col] for col in columns if col in data)
 
     def get_experience_batch(self, size: int = None) -> Self:
+        """
+        Get the last `size` steps as a new Experience object.
+
+        Args:
+            size (int, optional): Number of steps to include. If None, includes all.
+        Returns:
+            Experience: New experience object with the last `size` steps.
+        """
         if size is None:
             size = len(self)
         return Experience(
