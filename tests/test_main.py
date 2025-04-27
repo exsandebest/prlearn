@@ -77,6 +77,7 @@ def combiner():
 
 
 def test_simple_learning(agent, env):
+    """Test simple learning scenario with steps and periodic training."""
     trainer = Trainer(
         agent, env, schedule=[("finish", 100, "steps"), ("train_agent", 20, "steps")]
     )
@@ -97,6 +98,7 @@ def test_simple_learning(agent, env):
 
 
 def test_observations_collecting(agent, env):
+    """Test parallel data collection with multiple workers and no training."""
     trainer = Trainer(
         agent,
         env,
@@ -121,6 +123,7 @@ def test_observations_collecting(agent, env):
 
 
 def test_learning_with_parallel_collecting(agent, env):
+    """Test parallel data collection with periodic training and sync mode."""
     trainer = Trainer(
         agent,
         env,
@@ -150,6 +153,7 @@ def test_learning_with_parallel_collecting(agent, env):
 
 
 def test_parallel_learning(agent, env, combiner):
+    """Test parallel learning with agent combination and sync mode."""
     trainer = Trainer(
         agent,
         env,
@@ -182,6 +186,7 @@ def test_parallel_learning(agent, env, combiner):
 
 
 def test_multiple_parallel_learning(agent, agent2, env):
+    """Test parallel learning with multiple different agents."""
     trainer = Trainer(
         [agent, agent2],
         env,
@@ -209,6 +214,78 @@ def test_multiple_parallel_learning(agent, agent2, env):
     assert result["workers"][1]["agent_version"] == 20
 
 
+def test_custom_combiner(agent, env):
+    """Test using a custom AgentCombiner with custom logic."""
+
+    class CustomCombiner(AgentCombiner):
+        def combine(
+            self, workers_agents, main_agent, workers_stats=None, main_agent_stats=None
+        ):
+            # Always return the first agent
+            return workers_agents[0]
+
+    combiner = CustomCombiner()
+    trainer = Trainer(
+        agent,
+        env,
+        n_workers=2,
+        schedule=[
+            ("finish", 50, "steps"),
+            ("train_agent", 10, "steps"),
+            ("combine_agents", 20, "steps"),
+        ],
+        mode="parallel_learning",
+        sync_mode="sync",
+        combiner=combiner,
+    )
+    trained_agent, result = trainer.run()
+    assert isinstance(trained_agent, MyAgent)
+    assert trainer.combiner is combiner
+
+
+def test_statistics_correctness(agent, env):
+    """Test that statistics in result are correct and consistent."""
+    trainer = Trainer(agent, env, schedule=[("finish", 10, "steps")])
+    trained_agent, result = trainer.run()
+    for worker in result["workers"]:
+        assert worker["total_steps"] == 10
+        assert len(worker["experience"]) == 10
+        assert isinstance(worker["rewards"], list)
+
+
+def test_schedule_variations(agent, env):
+    """Test Trainer with different schedule units (steps, episodes, seconds)."""
+    schedules = [
+        [("finish", 10, "steps"), ("train_agent", 2, "steps")],
+        [("finish", 5, "episodes"), ("train_agent", 1, "episodes")],
+        [("finish", 1, "seconds"), ("train_agent", 0.5, "seconds")],
+    ]
+    for schedule in schedules:
+        trainer = Trainer(agent, env, schedule=schedule)
+        trained_agent, result = trainer.run()
+        assert isinstance(trained_agent, MyAgent)
+        assert isinstance(result, dict)
+        assert "workers" in result
+
+
+def test_parallel_learning_async(agent, env):
+    """Test parallel learning in async mode."""
+    trainer = Trainer(
+        agent,
+        env,
+        n_workers=2,
+        schedule=[
+            ("finish", 50, "steps"),
+            ("train_agent", 10, "steps"),
+            ("combine_agents", 20, "steps"),
+        ],
+        mode="parallel_learning",
+        sync_mode="async",
+    )
+    trained_agent, result = trainer.run()
+    assert isinstance(trained_agent, MyAgent)
+    assert trainer.sync_mode == SyncMode.ASYNCHRONOUS
+
+
 if __name__ == "__main__":
-    os.environ["LOG_LEVEL"] = "WARNING"
     pytest.main()

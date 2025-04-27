@@ -1,3 +1,5 @@
+import pickle
+
 import pytest
 
 from prlearn import Experience
@@ -9,6 +11,7 @@ def experience():
 
 
 def test_add_step(experience):
+    """Test that add_step correctly adds a single step."""
     experience.add_step(
         observation=1,
         action=2,
@@ -35,6 +38,7 @@ def test_add_step(experience):
 
 
 def test_clear(experience):
+    """Test that clear removes all data from Experience."""
     experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
     experience.clear()
     assert len(experience) == 0
@@ -51,6 +55,7 @@ def test_clear(experience):
 
 
 def test_add_experience(experience):
+    """Test that add_experience merges another Experience correctly."""
     other_exp = Experience(
         observations=[1],
         actions=[2],
@@ -78,6 +83,7 @@ def test_add_experience(experience):
 
 
 def test_copy(experience):
+    """Test that copy returns a deep copy of Experience."""
     experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
     copied_exp = experience.copy()
     assert copied_exp.observations == [1]
@@ -90,9 +96,13 @@ def test_copy(experience):
     assert copied_exp.agent_versions == [1]
     assert copied_exp.worker_ids == [1]
     assert copied_exp.episodes == [1]
+    # Ensure it's a deep copy
+    copied_exp.observations[0] = 999
+    assert experience.observations[0] == 1
 
 
 def test_get(experience):
+    """Test that get returns correct columns and default columns."""
     experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
     data = experience.get(columns=["observations", "actions", "rewards"])
     assert data == ([1], [2], [3])
@@ -109,6 +119,7 @@ def test_get(experience):
 
 
 def test_get_experience_batch(experience):
+    """Test that get_experience_batch returns the last N steps."""
     for i in range(10):
         experience.add_step(
             i, i + 1, i + 2, i + 3, i % 2 == 0, i % 2 != 0, {"key": i}, i, i, i // 3
@@ -124,6 +135,50 @@ def test_get_experience_batch(experience):
     assert batch.agent_versions == [5, 6, 7, 8, 9]
     assert batch.worker_ids == [5, 6, 7, 8, 9]
     assert batch.episodes == [1, 2, 2, 2, 3]
+
+
+def test_empty_experience():
+    """Test that an empty Experience behaves as expected."""
+    exp = Experience()
+    assert len(exp) == 0
+    assert exp.get() == ([], [], [], [], [], [], [])
+    assert exp.get_experience_batch(5).observations == []
+
+
+def test_large_experience_stress():
+    """Test Experience with a large number of steps (stress test)."""
+    exp = Experience()
+    n = 10000
+    for i in range(n):
+        exp.add_step(i, i, i, i, False, False, {}, 0, 0, 0)
+    assert len(exp) == n
+    batch = exp.get_experience_batch(100)
+    assert len(batch.observations) == 100
+
+
+def test_experience_pickle_serialization():
+    """Test that Experience can be pickled and unpickled correctly."""
+    exp = Experience()
+    exp.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
+    data = pickle.dumps(exp)
+    loaded = pickle.loads(data)
+    assert loaded.observations == [1]
+    assert loaded.actions == [2]
+    assert loaded.rewards == [3]
+    assert loaded.next_observations == [4]
+    assert loaded.terminated == [True]
+    assert loaded.truncated == [False]
+    assert loaded.info == [{"key": "value"}]
+    assert loaded.agent_versions == [1]
+    assert loaded.worker_ids == [1]
+    assert loaded.episodes == [1]
+
+
+def test_get_with_invalid_columns(experience):
+    """Test that get ignores invalid columns and returns only valid ones."""
+    experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
+    data = experience.get(columns=["observations", "not_a_column", "actions"])
+    assert data == ([1], [2])
 
 
 if __name__ == "__main__":
