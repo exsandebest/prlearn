@@ -81,7 +81,7 @@ class MyEnv(Environment):
         return [[1, 2], [3, 4]], 1, False, False, {"info": "description"}
 ```
 
-**See more usage examples in [docs/examples.md](docs/examples.md)**
+**See more usage examples in [docs/examples.md](https://github.com/exsandebest/prlearn/blob/master/docs/examples.md)**
 
 
 ## Extending
@@ -100,4 +100,4 @@ pytest tests/
 
 ## License
 
-MIT License. See [LICENSE](LICENSE).
+MIT License. See [LICENSE](https://github.com/exsandebest/prlearn/blob/master/LICENSE).
