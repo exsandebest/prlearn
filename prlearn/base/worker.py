@@ -1,9 +1,10 @@
 import os
-from collections import Counter
+from bisect import insort
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy
 from statistics import mean, median
-from threading import Lock
+from threading import Event, Lock
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from prlearn.base.agent import Agent
@@ -59,7 +60,13 @@ class Worker:
         self.total_steps = 0
         self.total_episodes = 0
         self.agent_version = 0
-        self.rewards = []
+        self.rewards: List[Union[int, float]] = []
+        self._reward_sum: Union[int, float] = 0
+        self._sorted_rewards: List[Union[int, float]] = []
+        self._recent_rewards: deque = deque(
+            maxlen=BASE_LAST_X_EPISODES_STATS
+        )
+        self._stats_rewards_count = 0
         self.global_params = global_params
         self.mode: Mode = global_params["mode"]
         self.experience = Experience()
@@ -70,6 +77,7 @@ class Worker:
         self.sync_mode: SyncMode = global_params["sync_mode"]
         self.scheduler: ProcessActionScheduler = global_params["scheduler"]
         self.agent_store_lock = Lock()
+        self._agent_ready_event = Event()
         self.wait_new_agent: bool = self.sync_mode == SyncMode.SYNCHRONOUS and (
             (self.mode == Mode.PARALLEL_COLLECTING and self.scheduler.agent_training)
             or (
@@ -129,14 +137,32 @@ class Worker:
         """
         if not self.rewards:
             return
+        if len(self.rewards) != len(self._sorted_rewards):
+            self._reward_sum = sum(self.rewards)
+            self._sorted_rewards = sorted(self.rewards)
+            self._recent_rewards = deque(
+                self.rewards[-BASE_LAST_X_EPISODES_STATS :],
+                maxlen=BASE_LAST_X_EPISODES_STATS,
+            )
+        if len(self.rewards) == self._stats_rewards_count:
+            return
+        self._stats_rewards_count = len(self.rewards)
         last_x_episodes = BASE_LAST_X_EPISODES_STATS
-        recent_rewards = self.rewards[-last_x_episodes:]
+        recent_rewards = list(self._recent_rewards)
+        total_rewards = len(self._sorted_rewards)
+        mid = total_rewards // 2
+        if total_rewards % 2:
+            median_reward = self._sorted_rewards[mid]
+        else:
+            median_reward = (
+                self._sorted_rewards[mid - 1] + self._sorted_rewards[mid]
+            ) / 2
         self.stats.update(
             {
-                "max_reward": max(self.rewards),
-                "mean_reward": mean(self.rewards),
-                "median_reward": median(self.rewards),
-                "min_reward": min(self.rewards),
+                "max_reward": self._sorted_rewards[-1],
+                "mean_reward": self._reward_sum / total_rewards,
+                "median_reward": median_reward,
+                "min_reward": self._sorted_rewards[0],
                 "max_x_episodes_reward": max(recent_rewards),
                 "mean_x_episodes_reward": mean(recent_rewards),
                 "median_x_episodes_reward": median(recent_rewards),
@@ -162,13 +188,13 @@ class Worker:
                     self.agent = self.agent_store
                 self.agent_version = self.agent_store_version
                 self.store_agent_available = False
+                self._agent_ready_event.clear()
             logger.debug(
                 f"Worker {self.worker_id}: New agent (version {self.agent_version}) acquired"
             )
             return
         if self.wait_new_agent:
-            while not self.store_agent_available:
-                pass
+            self._agent_ready_event.wait()
             self._get_new_agent()
 
     def _run_listener(self) -> None:
@@ -186,6 +212,7 @@ class Worker:
                     self.agent_store = trainer_message.data.agent
                     self.agent_store_version = trainer_message.data.agent_version
                     self.store_agent_available = True
+                    self._agent_ready_event.set()
             else:
                 logger.warning(
                     f"Worker {self.worker_id}: Unexpected message type: {trainer_message.type}"
@@ -276,6 +303,9 @@ class Worker:
             if terminated or truncated:
                 observation, info = self.env.reset()
                 self.rewards.append(episode_reward)
+                self._reward_sum += episode_reward
+                insort(self._sorted_rewards, episode_reward)
+                self._recent_rewards.append(episode_reward)
                 self.total_episodes += 1
                 if self.total_episodes % BASE_DEBUG_WORKER_PRINT_STATS_EPISODES == 0:
                     self._update_stats()
