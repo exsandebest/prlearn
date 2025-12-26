@@ -148,7 +148,6 @@ class Worker:
         if len(self.rewards) == self._stats_rewards_count:
             return
         self._stats_rewards_count = len(self.rewards)
-        last_x_episodes = BASE_LAST_X_EPISODES_STATS
         recent_rewards = list(self._recent_rewards)
         total_rewards = len(self._sorted_rewards)
         mid = total_rewards // 2
