@@ -228,5 +228,26 @@ def test_experience_json_roundtrip(experience):
     assert loaded.episodes == experience.episodes
 
 
+def test_pop_experience_batch_removes_all_when_size_not_provided(experience):
+    """pop_experience_batch should return everything and clear the buffer."""
+    for i in range(3):
+        experience.add_step(i, i + 1, i + 2, i + 3, False, False, {}, i, i, i)
+    popped = experience.pop_experience_batch()
+    assert len(popped) == 3
+    assert len(experience) == 0
+    assert popped.rewards == [2, 3, 4]
+
+
+def test_pop_experience_batch_partial_removal(experience):
+    """pop_experience_batch should leave untouched data when size is smaller than buffer."""
+    for i in range(5):
+        experience.add_step(i, i, i, i, False, False, {}, i, i, i)
+    popped = experience.pop_experience_batch(2)
+    assert len(popped) == 2
+    assert popped.observations == [3, 4]
+    assert experience.observations == [0, 1, 2]
+    assert len(experience) == 3
+
+
 if __name__ == "__main__":
     pytest.main()
