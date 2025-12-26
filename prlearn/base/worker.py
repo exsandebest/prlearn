@@ -70,6 +70,7 @@ class Worker:
         self.global_params = global_params
         self.mode: Mode = global_params["mode"]
         self.experience = Experience()
+        self.return_experience = Experience()
         self.agent_store = None
         self.agent_store_version = 0
         self.store_agent_available = False
@@ -254,13 +255,15 @@ class Worker:
             )
         else:
             message_type = MessageType.WORKER_EXPERIENCE
+            exp_batch = self.experience.pop_experience_batch(pas_diffs["steps"])
+            self.return_experience.add_experience(exp_batch)
             data = ExperienceData(
                 agent_version=self.agent_version,
                 n_steps=pas_diffs["steps"],
                 n_total_steps=self.total_steps,
                 n_episodes=pas_diffs["episodes"],
                 n_total_episodes=self.total_episodes,
-                experience=self.experience.get_experience_batch(pas_diffs["steps"]),
+                experience=exp_batch,
                 rewards=self.rewards[-pas_diffs["episodes"] :],
                 stats=self.stats,
             )
@@ -340,7 +343,12 @@ class Worker:
             "id": self.worker_id,
             "agent": self.agent,
             "agent_version": self.agent_version,
-            "experience": self.experience,
+            "experience": (
+                self.return_experience
+                if self.mode == Mode.PARALLEL_COLLECTING
+                else self.experience
+            ),
+            "collected_experience": self.return_experience,
             "rewards": self.rewards,
             "total_episodes": self.total_episodes,
             "total_steps": self.total_steps,
