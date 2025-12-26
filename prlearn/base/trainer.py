@@ -186,8 +186,8 @@ class Trainer:
                 break
         logger.debug(f"Worker handler for worker {worker_index} done")
 
+    @staticmethod
     def _run_worker(
-        self,
         idx: int,
         env: Environment,
         agent: Agent,
@@ -301,7 +301,7 @@ class Trainer:
         logger.debug("Starting processes")
         for i in range(self.n_workers):
             process = mp_context.Process(
-                target=self._run_worker,
+                target=Trainer._run_worker,
                 args=(
                     i,
                     self.env,

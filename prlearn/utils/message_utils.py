@@ -1,8 +1,7 @@
-import os
 import queue
 from typing import Any
 
-import multiprocess as mp
+from prlearn.utils.multiproc_lib import mp
 
 
 def queue_receive(q: mp.Queue, timeout=None):
