@@ -20,7 +20,11 @@ from prlearn.common.dataclasses import (
     TrainerMessage,
     WorkerMessage,
 )
-from prlearn.common.pas import ProcessActionScheduler
+from prlearn.common.pas import (
+    PAS_ACTION_COMBINE_AGENTS,
+    PAS_ACTION_TRAIN_AGENT,
+    ProcessActionScheduler,
+)
 from prlearn.utils.logger import get_logger
 from prlearn.utils.message_utils import queue_receive, queue_send, try_queue_send
 from prlearn.utils.multiproc_lib import mp
@@ -245,7 +249,9 @@ class Trainer:
         Returns:
             Optional[Agent]: The updated agent after training.
         """
-        pas_diffs = self.scheduler.check_agent_train(total_steps, total_episodes)
+        pas_diffs = self.scheduler.check(
+            PAS_ACTION_TRAIN_AGENT, total_steps, total_episodes
+        )
         if pas_diffs:
             logger.debug(
                 f"Training agent: Steps: {total_steps}, Episodes: {total_episodes}"
@@ -268,7 +274,9 @@ class Trainer:
         Returns:
             Optional[Agent]: The combined agent after aggregation.
         """
-        pas_diffs = self.scheduler.check_combine_agents(total_steps, total_episodes)
+        pas_diffs = self.scheduler.check(
+            PAS_ACTION_COMBINE_AGENTS, total_steps, total_episodes
+        )
         if pas_diffs:
             new_agent = self.combiner.combine(
                 self.workers_agents,

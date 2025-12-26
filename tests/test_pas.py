@@ -3,7 +3,13 @@ import time
 import pytest
 
 from prlearn.common.dataclasses import Mode
-from prlearn.common.pas import ProcessActionScheduler
+from prlearn.common.pas import (
+    PAS_ACTION_COMBINE_AGENTS,
+    PAS_ACTION_FINISH,
+    PAS_ACTION_TRAIN_AGENT,
+    PAS_ACTION_WORKER_SEND,
+    ProcessActionScheduler,
+)
 
 
 @pytest.fixture
@@ -38,7 +44,7 @@ def test_set_time(scheduler):
 def test_check_agent_train_seconds(scheduler):
     """Test check_agent_train triggers after enough seconds have passed."""
     scheduler.set_time(time.time() - 6, "train_agent")
-    result = scheduler.check_agent_train(check_time=time.time())
+    result = scheduler.check(PAS_ACTION_TRAIN_AGENT, check_time=time.time())
     assert result is not None
     assert result["seconds"] >= 5
 
@@ -46,7 +52,7 @@ def test_check_agent_train_seconds(scheduler):
 def test_check_worker_send_steps(scheduler):
     """Test check_worker_send triggers after enough steps have passed."""
     scheduler.state["worker_send_data"]["steps"] = 0
-    result = scheduler.check_worker_send(n_steps=11)
+    result = scheduler.check(PAS_ACTION_WORKER_SEND, n_steps=11)
     assert result is not None
     assert result["steps"] == 11
 
@@ -54,7 +60,7 @@ def test_check_worker_send_steps(scheduler):
 def test_check_train_finish_episodes(scheduler):
     """Test check_train_finish triggers after enough episodes have passed."""
     scheduler.state["finish"]["episodes"] = 0
-    result = scheduler.check_train_finish(n_episodes=4)
+    result = scheduler.check(PAS_ACTION_FINISH, n_episodes=4)
     assert result is not None
     assert result["episodes"] == 4
 
@@ -62,14 +68,14 @@ def test_check_train_finish_episodes(scheduler):
 def test_check_combine_agents_seconds(scheduler):
     """Test check_worker_send does not trigger if not enough steps have passed."""
     scheduler.state["worker_send_data"]["steps"] = 0
-    result = scheduler.check_worker_send(n_steps=8)
+    result = scheduler.check(PAS_ACTION_WORKER_SEND, n_steps=8)
     assert result is None
 
 
 def test_check_worker_send_steps_not_complete(scheduler):
     """Test check_combine_agents triggers after enough seconds have passed."""
     scheduler.set_time(time.time() - 8, "combine_agents")
-    result = scheduler.check_combine_agents(check_time=time.time())
+    result = scheduler.check(PAS_ACTION_COMBINE_AGENTS, check_time=time.time())
     assert result is not None
     assert result["seconds"] >= 7
 
@@ -129,7 +135,7 @@ def test_check_boundary_values():
     """Test check() with boundary values (exactly at the interval)."""
     scheduler = ProcessActionScheduler([("train_agent", 5, "steps")])
     scheduler.state["train_agent"]["steps"] = 0
-    result = scheduler.check("train_agent", n_steps=5)
+    result = scheduler.check(PAS_ACTION_TRAIN_AGENT, n_steps=5)
     assert result is not None
     assert result["steps"] == 5
 

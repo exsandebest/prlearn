@@ -7,7 +7,10 @@ from prlearn.base.environment import Environment
 from prlearn.base.experience import Experience
 from prlearn.base.worker import Worker
 from prlearn.common.dataclasses import Mode, SyncMode
-from prlearn.common.pas import ProcessActionScheduler
+from prlearn.common.pas import (
+    PAS_ACTION_TRAIN_AGENT,
+    ProcessActionScheduler,
+)
 from prlearn.utils.multiproc_lib import mp
 
 
@@ -86,10 +89,13 @@ def test_worker_get_new_agent_no_set_method(worker):
 
 def test_worker_parallel_learning_step(worker):
     """Test that _parallel_learning_step calls agent.train when scheduled."""
-    worker.scheduler.check_agent_train = MagicMock(return_value={"steps": 1})
+    worker.scheduler.check = MagicMock(return_value={"steps": 1})
     worker.agent.train = MagicMock()
     worker.experience.get_experience_batch = MagicMock(return_value=MagicMock())
     worker._parallel_learning_step()
+    worker.scheduler.check.assert_called_with(
+        PAS_ACTION_TRAIN_AGENT, worker.total_steps, worker.total_episodes
+    )
     worker.agent.train.assert_called()
 
 

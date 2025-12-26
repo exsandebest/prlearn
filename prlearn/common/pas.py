@@ -1,7 +1,23 @@
 import time
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 from prlearn.common.dataclasses import Mode
+
+
+PAS_ACTION_TRAIN_AGENT = "train_agent"
+PAS_ACTION_WORKER_SEND = "worker_send_data"
+PAS_ACTION_FINISH = "finish"
+PAS_ACTION_COMBINE_AGENTS = "combine_agents"
+PAS_ACTIONS = (
+    PAS_ACTION_TRAIN_AGENT,
+    PAS_ACTION_WORKER_SEND,
+    PAS_ACTION_FINISH,
+    PAS_ACTION_COMBINE_AGENTS,
+)
+PAS_UNITS = ("steps", "episodes", "seconds")
+ActionName = Literal[
+    "train_agent", "worker_send_data", "finish", "combine_agents"
+]
 
 
 def validate_schedule_config(
@@ -17,25 +33,23 @@ def validate_schedule_config(
     """
     if config is None:
         return
-    allowed_actions = ["train_agent", "worker_send_data", "finish", "combine_agents"]
-    allowed_units = ["steps", "episodes", "seconds"]
     for idx, item in enumerate(config):
         if not isinstance(item, tuple) or len(item) != 3:
             raise ValueError(
                 f"Schedule item at index {idx} must be a tuple of (str, int|float, str), got: {item}"
             )
         action, interval, units = item
-        if not isinstance(action, str) or action not in allowed_actions:
+        if not isinstance(action, str) or action not in PAS_ACTIONS:
             raise ValueError(
-                f"Schedule item at index {idx}: action '{action}' is not valid. Allowed: {allowed_actions}"
+                f"Schedule item at index {idx}: action '{action}' is not valid. Allowed: {PAS_ACTIONS}"
             )
         if not isinstance(interval, (int, float)) or interval <= 0:
             raise ValueError(
                 f"Schedule item at index {idx}: interval '{interval}' must be a positive number."
             )
-        if not isinstance(units, str) or units not in allowed_units:
+        if not isinstance(units, str) or units not in PAS_UNITS:
             raise ValueError(
-                f"Schedule item at index {idx}: units '{units}' is not valid. Allowed: {allowed_units}"
+                f"Schedule item at index {idx}: units '{units}' is not valid. Allowed: {PAS_UNITS}"
             )
 
 
@@ -55,7 +69,7 @@ class ProcessActionScheduler:
 
     def __init__(
         self,
-        config: Optional[List[Tuple[str, int | float, str]]] = None,
+        config: Optional[List[Tuple[ActionName, int | float, str]]] = None,
         mode: Mode = Mode.PARALLEL_COLLECTING,
         n_workers: int = 1,
     ):
@@ -68,24 +82,20 @@ class ProcessActionScheduler:
             n_workers (int): Number of workers.
         """
         validate_schedule_config(config)
-        self.possible_actions = [
-            "train_agent",
-            "worker_send_data",
-            "finish",
-            "combine_agents",
-        ]
+        self.possible_actions = list(PAS_ACTIONS)
 
+        interval_template: Dict[str, Optional[Union[int, float]]] = {
+            "seconds_interval": None,
+            "steps_interval": None,
+            "episodes_interval": None,
+        }
         self.config: Dict[str, Dict[str, Optional[Union[int, float]]]] = {
-            action: {
-                "seconds_interval": None,
-                "steps_interval": None,
-                "episodes_interval": None,
-            }
-            for action in self.possible_actions
+            action: interval_template.copy() for action in self.possible_actions
         }
 
+        now = time.time()
         self.state: Dict[str, Dict[str, Union[int, float]]] = {
-            action: {"steps": 0, "episodes": 0, "seconds": time.time()}
+            action: {"steps": 0, "episodes": 0, "seconds": now}
             for action in self.possible_actions
         }
 
@@ -104,9 +114,9 @@ class ProcessActionScheduler:
                 raise ValueError(
                     f"Invalid interval '{interval}' for action '{action}'. Must be an int or float"
                 )
-            if units not in {"seconds", "steps", "episodes"}:
+            if units not in PAS_UNITS:
                 raise ValueError(
-                    f"Invalid units '{units}' for action '{action}'. Must be one of 'seconds', 'steps', 'episodes'"
+                    f"Invalid units '{units}' for action '{action}'. Must be one of {PAS_UNITS}"
                 )
             self.config[action][f"{units}_interval"] = interval
 
@@ -140,7 +150,7 @@ class ProcessActionScheduler:
             ):
                 self.config["worker_send_data"][key] = self.config["finish"][key]
 
-    def set_time(self, seconds: float = None, action: str = None) -> None:
+    def set_time(self, seconds: float = None, action: ActionName | None = None) -> None:
         """
         Set the current time for all or a specific action.
 
@@ -158,7 +168,7 @@ class ProcessActionScheduler:
 
     def _update_state(
         self,
-        action: str,
+        action: ActionName,
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
@@ -176,7 +186,7 @@ class ProcessActionScheduler:
         self.state[action]["episodes"] = n_episodes
         self.state[action]["seconds"] = check_time
 
-    def _get_state(self, action: str) -> Dict[str, Union[int, float]]:
+    def _get_state(self, action: ActionName) -> Dict[str, Union[int, float]]:
         """
         Get the state for a specific action.
 
@@ -189,7 +199,7 @@ class ProcessActionScheduler:
 
     def _get_diff(
         self,
-        action: str,
+        action: ActionName,
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
@@ -213,7 +223,7 @@ class ProcessActionScheduler:
 
     def _update_with_diff(
         self,
-        action: str,
+        action: ActionName,
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
@@ -235,7 +245,7 @@ class ProcessActionScheduler:
 
     def check(
         self,
-        action: str,
+        action: ActionName,
         n_steps: int = 0,
         n_episodes: int = 0,
         check_time: float = None,
@@ -259,82 +269,16 @@ class ProcessActionScheduler:
             )
         if check_time is None:
             check_time = time.time()
-        if (
-            (
-                self.config[action]["seconds_interval"] is not None
-                and check_time - self.state[action]["seconds"]
-                >= self.config[action]["seconds_interval"]
-            )
-            or (
-                self.config[action]["steps_interval"] is not None
-                and n_steps - self.state[action]["steps"]
-                >= self.config[action]["steps_interval"]
-            )
-            or (
-                self.config[action]["episodes_interval"] is not None
-                and n_episodes - self.state[action]["episodes"]
-                >= self.config[action]["episodes_interval"]
-            )
-        ):
-            return self._update_with_diff(action, n_steps, n_episodes, check_time)
+        state = self.state[action]
+        intervals = (
+            ("seconds_interval", check_time - state["seconds"]),
+            ("steps_interval", n_steps - state["steps"]),
+            ("episodes_interval", n_episodes - state["episodes"]),
+        )
+        for interval_key, diff in intervals:
+            interval_limit = self.config[action][interval_key]
+            if interval_limit is not None and diff >= interval_limit:
+                return self._update_with_diff(
+                    action, n_steps, n_episodes, check_time
+                )
         return None
-
-    def check_worker_send(
-        self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ) -> Optional[Dict[str, float]]:
-        """
-        Check if worker should send data.
-
-        Args:
-            n_steps (int): Number of steps.
-            n_episodes (int): Number of episodes.
-            check_time (float, optional): Time value.
-        Returns:
-            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
-        """
-        return self.check("worker_send_data", n_steps, n_episodes, check_time)
-
-    def check_agent_train(
-        self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ) -> Optional[Dict[str, float]]:
-        """
-        Check if agent should be trained.
-
-        Args:
-            n_steps (int): Number of steps.
-            n_episodes (int): Number of episodes.
-            check_time (float, optional): Time value.
-        Returns:
-            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
-        """
-        return self.check("train_agent", n_steps, n_episodes, check_time)
-
-    def check_combine_agents(
-        self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ) -> Optional[Dict[str, float]]:
-        """
-        Check if agents should be combined.
-
-        Args:
-            n_steps (int): Number of steps.
-            n_episodes (int): Number of episodes.
-            check_time (float, optional): Time value.
-        Returns:
-            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
-        """
-        return self.check("combine_agents", n_steps, n_episodes, check_time)
-
-    def check_train_finish(
-        self, n_steps: int = 0, n_episodes: int = 0, check_time: float = None
-    ) -> Optional[Dict[str, float]]:
-        """
-        Check if training should finish.
-
-        Args:
-            n_steps (int): Number of steps.
-            n_episodes (int): Number of episodes.
-            check_time (float, optional): Time value.
-        Returns:
-            Optional[Dict[str, float]]: The differences if the action should be executed, otherwise None.
-        """
-        return self.check("finish", n_steps, n_episodes, check_time)

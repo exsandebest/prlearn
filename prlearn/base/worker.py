@@ -24,7 +24,12 @@ from prlearn.common.dataclasses import (
     TrainerMessage,
     WorkerMessage,
 )
-from prlearn.common.pas import ProcessActionScheduler
+from prlearn.common.pas import (
+    PAS_ACTION_FINISH,
+    PAS_ACTION_TRAIN_AGENT,
+    PAS_ACTION_WORKER_SEND,
+    ProcessActionScheduler,
+)
 from prlearn.utils.logger import get_logger
 from prlearn.utils.message_utils import queue_receive, queue_send
 from prlearn.utils.multiproc_lib import mp
@@ -223,8 +228,8 @@ class Worker:
         """
         Perform a parallel learning step by training the agent with a batch of experiences.
         """
-        pas_diffs = self.scheduler.check_agent_train(
-            self.total_steps, self.total_episodes
+        pas_diffs = self.scheduler.check(
+            PAS_ACTION_TRAIN_AGENT, self.total_steps, self.total_episodes
         )
         if pas_diffs:
             exp = self.experience.get_experience_batch(pas_diffs["steps"])
@@ -235,8 +240,8 @@ class Worker:
         """
         Send a message from the worker to the trainer, including agent data or experience data.
         """
-        pas_diffs = self.scheduler.check_worker_send(
-            self.total_steps, self.total_episodes
+        pas_diffs = self.scheduler.check(
+            PAS_ACTION_WORKER_SEND, self.total_steps, self.total_episodes
         )
         if not pas_diffs:
             return
@@ -322,7 +327,8 @@ class Worker:
             if self.mode == Mode.PARALLEL_LEARNING:
                 self._parallel_learning_step()
             self._send_message()
-            if self.scheduler.check_train_finish(
+            if self.scheduler.check(
+                PAS_ACTION_FINISH,
                 n_steps=self.total_steps,
                 n_episodes=self.total_episodes,
             ):
