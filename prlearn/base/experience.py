@@ -5,6 +5,20 @@ from typing import Any, Dict, List, Optional, Tuple, Type, TypeVar
 T = TypeVar("T", bound="Experience")
 
 
+EXPERIENCE_FIELDS = [
+    "observations",
+    "actions",
+    "rewards",
+    "next_observations",
+    "terminated",
+    "truncated",
+    "info",
+    "agent_versions",
+    "worker_ids",
+    "episodes",
+]
+
+
 @dataclass
 class Experience:
     """
@@ -120,18 +134,7 @@ class Experience:
         Args:
             exp (Experience): Another experience object to concatenate.
         """
-        for attr in [
-            "observations",
-            "actions",
-            "rewards",
-            "next_observations",
-            "terminated",
-            "truncated",
-            "info",
-            "agent_versions",
-            "worker_ids",
-            "episodes",
-        ]:
+        for attr in EXPERIENCE_FIELDS:
             getattr(self, attr).extend(getattr(exp, attr))
 
     def copy(self) -> "Experience":
@@ -141,23 +144,7 @@ class Experience:
         Returns:
             Experience: A copy of this experience buffer.
         """
-        return Experience(
-            *[
-                getattr(self, attr).copy()
-                for attr in [
-                    "observations",
-                    "actions",
-                    "rewards",
-                    "next_observations",
-                    "terminated",
-                    "truncated",
-                    "info",
-                    "agent_versions",
-                    "worker_ids",
-                    "episodes",
-                ]
-            ]
-        )
+        return Experience(*[getattr(self, attr).copy() for attr in EXPERIENCE_FIELDS])
 
     def get(self, columns: Optional[List[str]] = None) -> Tuple:
         """
@@ -210,22 +197,35 @@ class Experience:
         elif size == 0:
             return Experience()
         return Experience(
-            *[
-                getattr(self, attr)[-size:]
-                for attr in [
-                    "observations",
-                    "actions",
-                    "rewards",
-                    "next_observations",
-                    "terminated",
-                    "truncated",
-                    "info",
-                    "agent_versions",
-                    "worker_ids",
-                    "episodes",
-                ]
-            ]
+            *[getattr(self, attr)[-size:] for attr in EXPERIENCE_FIELDS]
         )
+
+    def pop_experience_batch(self, size: Optional[int] = None) -> "Experience":
+        """
+        Remove and return the last `size` steps as a new Experience object.
+
+        Args:
+            size (int, optional): Number of steps to include. If None or greater
+                than the available steps, removes and returns all.
+        Returns:
+            Experience: New experience object with the removed steps.
+        """
+        current_len = len(self)
+        if not current_len:
+            return Experience()
+
+        if size is None or size >= current_len:
+            batch = self.copy()
+            self.clear()
+            return batch
+
+        slice_idx = slice(-size, None)
+        batch_data = []
+        for attr in EXPERIENCE_FIELDS:
+            src = getattr(self, attr)
+            batch_data.append(src[slice_idx])
+            del src[slice_idx]
+        return Experience(*batch_data)
 
     def to_dict(self) -> dict:
         """
