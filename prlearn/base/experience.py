@@ -55,7 +55,7 @@ class Experience:
             len(getattr(self, field.name))
             for field in self.__dataclass_fields__.values()
         ]
-        nonzero_lengths = [l for l in lengths if l > 0]
+        nonzero_lengths = [length for length in lengths if length > 0]
         if nonzero_lengths and len(set(nonzero_lengths)) > 1:
             raise ValueError(
                 f"All fields in Experience must have the same length or be empty, got lengths: {lengths}"
