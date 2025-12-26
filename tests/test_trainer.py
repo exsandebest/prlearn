@@ -169,5 +169,97 @@ def test_trainer_schedule_variations(mock_agent, mock_env):
         assert trainer.schedule_config == schedule
 
 
+def test_train_agent_uses_scheduler_and_clears_experience(mock_env):
+    """_train_agent should train, increment version, and clear stored experience."""
+
+    class DummyAgent(Agent):
+        def __init__(self):
+            self.train_calls = []
+
+        def action(self, state):
+            return 0
+
+        def train(self, experience: Experience):
+            self.train_calls.append(experience.copy())
+
+        def get(self):
+            return {"snapshot": True}
+
+    agent = DummyAgent()
+    trainer = Trainer(agent=agent, env=mock_env, n_workers=1, mode="parallel_collecting")
+    trainer.scheduler = MagicMock()
+    trainer.scheduler.check_agent_train.return_value = {"steps": 1, "episodes": 1}
+    trainer.experience.add_step(1, 2, 3, 4, False, False, {}, 0, 0, 0)
+
+    result = trainer._train_agent(total_steps=1, total_episodes=1)
+
+    assert trainer.agent_version == 1
+    assert len(trainer.experience) == 0
+    assert agent.train_calls[0].observations == [1]
+    assert result == {"snapshot": True}
+
+
+def test_train_agent_noop_when_scheduler_says_no(mock_agent, mock_env):
+    """_train_agent should be a no-op when scheduler check fails."""
+    trainer = Trainer(agent=mock_agent, env=mock_env, n_workers=1)
+    trainer.scheduler = MagicMock()
+    trainer.scheduler.check_agent_train.return_value = None
+    trainer.agent_version = 5
+
+    result = trainer._train_agent(total_steps=0, total_episodes=0)
+
+    assert result is None
+    assert trainer.agent_version == 5
+    mock_agent.train.assert_not_called()
+
+
+def test_combine_agents_updates_version_and_returns_combined_agent(mock_env):
+    """_combine_agents should combine worker agents and bump the agent version."""
+    agent = MagicMock(Agent)
+    combiner = MagicMock(AgentCombiner)
+    trainer = Trainer(
+        agent=agent,
+        env=mock_env,
+        n_workers=2,
+        mode="parallel_learning",
+        combiner=combiner,
+    )
+    trainer.scheduler = MagicMock()
+    trainer.scheduler.check_combine_agents.return_value = {"steps": 1, "episodes": 1}
+    trainer.workers_agents = [MagicMock(name="w0"), MagicMock(name="w1")]
+    trainer.workers_agent_versions = [2, 4]
+    trainer.workers_stats = [{"m": 1}, {"m": 2}]
+    combined_agent = object()
+    combiner.combine.return_value = combined_agent
+
+    result = trainer._combine_agents(total_steps=1, total_episodes=1)
+
+    combiner.combine.assert_called_with(trainer.workers_agents, agent, trainer.workers_stats)
+    assert trainer.agent_version == 5
+    assert result is combined_agent
+
+
+def test_combine_agents_skips_when_scheduler_blocks(mock_env):
+    """_combine_agents should not call combiner when scheduler returns nothing."""
+    agent = MagicMock(Agent)
+    combiner = MagicMock(AgentCombiner)
+    trainer = Trainer(
+        agent=agent,
+        env=mock_env,
+        n_workers=2,
+        mode="parallel_learning",
+        combiner=combiner,
+    )
+    trainer.scheduler = MagicMock()
+    trainer.scheduler.check_combine_agents.return_value = None
+    trainer.agent_version = 10
+
+    result = trainer._combine_agents(total_steps=0, total_episodes=0)
+
+    assert result is None
+    assert trainer.agent_version == 10
+    combiner.combine.assert_not_called()
+
+
 if __name__ == "__main__":
     pytest.main()
