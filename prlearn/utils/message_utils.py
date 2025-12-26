@@ -31,9 +31,10 @@ def try_queue_receive(q: mp.Queue):
 
 
 def try_queue_send(q: mp.Queue, data: Any) -> int:
-    if not q.full():
-        try:
-            q.put_nowait(data)
-            return 0
-        except queue.Full as e:
-            return 1
+    if q.full():
+        return 1
+    try:
+        q.put_nowait(data)
+        return 0
+    except queue.Full as e:
+        return 1
