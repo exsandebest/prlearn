@@ -1,5 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
-from threading import Lock
+from threading import Event, Lock
 from typing import Any, Dict, List, Optional, Tuple
 
 from prlearn.base.agent import Agent
@@ -136,6 +136,9 @@ class Trainer:
         self.workers_done_accepted = [False] * n_workers
         self.workers_messages = [[] for _ in range(n_workers)]
         self.workers_results = [None for _ in range(n_workers)]
+        self.total_steps = 0
+        self.total_episodes = 0
+        self._worker_update_event = Event()
 
     def _update_worker_data(self, worker_index: int, data: Any) -> None:
         """
@@ -145,11 +148,16 @@ class Trainer:
             worker_index (int): Index of the worker.
             data (Any): Data received from the worker.
         """
+        prev_episodes = self.workers_episodes[worker_index]
+        prev_steps = self.workers_steps[worker_index]
         self.workers_episodes[worker_index] = data.n_total_episodes
         self.workers_steps[worker_index] = data.n_total_steps
         self.workers_agent_versions[worker_index] = data.agent_version
         self.workers_stats[worker_index] = data.stats
         self.workers_rewards[worker_index].extend(data.rewards)
+        self.total_episodes += data.n_total_episodes - prev_episodes
+        self.total_steps += data.n_total_steps - prev_steps
+        self._worker_update_event.set()
 
     def _run_worker_handler(self, worker_index: int, queue: mp.Queue) -> None:
         """
@@ -183,6 +191,7 @@ class Trainer:
                 logger.debug(f"Worker {worker_index} received DONE message")
                 self.workers_finished[worker_index] = True
                 self.workers_results[worker_index] = worker_message.data
+                self._worker_update_event.set()
                 break
         logger.debug(f"Worker handler for worker {worker_index} done")
 
@@ -335,10 +344,13 @@ class Trainer:
                 queue.parent_to_child_queue, TrainerMessage(MessageType.TRAINER_START)
             )
         self.scheduler.set_time()
+        self._worker_update_event.set()
         logger.info("Main process started")
         while not (all(self.workers_finished) and all(self.workers_done_accepted)):
-            current_total_steps = sum(self.workers_steps)
-            current_total_episodes = sum(self.workers_episodes)
+            self._worker_update_event.wait(BASE_QUEUE_RECEIVE_TIMEOUT)
+            self._worker_update_event.clear()
+            current_total_steps = self.total_steps
+            current_total_episodes = self.total_episodes
             agent_data = (
                 self._train_agent(current_total_steps, current_total_episodes)
                 if self.mode == Mode.PARALLEL_COLLECTING

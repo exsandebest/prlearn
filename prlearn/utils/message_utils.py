@@ -6,11 +6,8 @@ from prlearn.utils.multiproc_lib import mp
 
 def queue_receive(q: mp.Queue, timeout=None):
     try:
-        try:
-            return q.get(timeout=timeout)
-        except TimeoutError as e:
-            return None
-    except queue.Empty as e:
+        return q.get(timeout=timeout)
+    except (queue.Empty, TimeoutError):
         return None
 
 
