@@ -181,5 +181,52 @@ def test_get_with_invalid_columns(experience):
     assert data == ([1], [2])
 
 
+def test_get_experience_batch_zero_size_returns_empty(experience):
+    """Requesting a batch of size 0 should return an empty Experience."""
+    experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
+    batch = experience.get_experience_batch(0)
+    assert len(batch) == 0
+    assert batch.observations == []
+
+
+def test_get_experience_batch_negative_size_raises(experience):
+    """Negative batch sizes are invalid and should raise ValueError."""
+    experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
+    with pytest.raises(ValueError):
+        experience.get_experience_batch(-1)
+
+
+def test_get_experience_batch_non_int_size_raises(experience):
+    """Non-integer batch sizes should raise TypeError."""
+    experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
+    with pytest.raises(TypeError):
+        experience.get_experience_batch(1.5)
+
+
+def test_experience_mismatched_lengths_validation():
+    """Experience should validate mismatched field lengths on initialization."""
+    with pytest.raises(ValueError):
+        Experience(observations=[1, 2], actions=[0])
+    with pytest.raises(ValueError):
+        Experience.from_dict({"observations": [1], "actions": [2, 3]})
+
+
+def test_experience_json_roundtrip(experience):
+    """Experience should serialize to/from JSON without data loss."""
+    experience.add_step(1, 2, 3, 4, True, False, {"key": "value"}, 1, 1, 1)
+    json_data = experience.to_json()
+    loaded = Experience.from_json(json_data)
+    assert loaded.observations == experience.observations
+    assert loaded.actions == experience.actions
+    assert loaded.rewards == experience.rewards
+    assert loaded.next_observations == experience.next_observations
+    assert loaded.terminated == experience.terminated
+    assert loaded.truncated == experience.truncated
+    assert loaded.info == experience.info
+    assert loaded.agent_versions == experience.agent_versions
+    assert loaded.worker_ids == experience.worker_ids
+    assert loaded.episodes == experience.episodes
+
+
 if __name__ == "__main__":
     pytest.main()

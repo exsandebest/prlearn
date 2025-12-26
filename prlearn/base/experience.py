@@ -203,6 +203,12 @@ class Experience:
         """
         if size is None:
             size = len(self)
+        elif not isinstance(size, int):
+            raise TypeError("Parameter 'size' must be an integer or None.")
+        elif size < 0:
+            raise ValueError("Parameter 'size' must be non-negative.")
+        elif size == 0:
+            return Experience()
         return Experience(
             *[
                 getattr(self, attr)[-size:]
